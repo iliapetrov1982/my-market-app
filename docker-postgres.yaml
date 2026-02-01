@@ -1,0 +1,26 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: my-market-postgres16
+    restart: unless-stopped
+
+    environment:
+      POSTGRES_DB: my-market-app
+      POSTGRES_USER: my_market_user
+      POSTGRES_PASSWORD: my_market_pass
+      TZ: Europe/Berlin
+
+    ports:
+      - "5432:5432"
+
+    volumes:
+      - pg16_data:/var/lib/postgresql/data
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U my_market_user -d \"my-market-app\" || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  pg16_data:

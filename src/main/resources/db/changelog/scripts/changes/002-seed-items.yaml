@@ -1,0 +1,210 @@
+databaseChangeLog:
+  - changeSet:
+      id: 002-seed-items
+      author: ilia-petrov
+      changes:
+
+        - insert:
+            tableName: items
+            columns:
+              - column: { name: title, value: "Black Baseball Cap" }
+              - column: { name: description, value: "Classic everyday cap with a curved brim." }
+              - column: { name: img_path, value: "/images/black-baseball-cap.png" }
+              - column: { name: price, valueNumeric: 1499 }
+
+        - insert:
+            tableName: items
+            columns:
+              - column: { name: title, value: "Ceramic Coffee Mug" }
+              - column: { name: description, value: "Simple ceramic mug for coffee or tea." }
+              - column: { name: img_path, value: "/images/ceramic-coffee-mug.png" }
+              - column: { name: price, valueNumeric: 899 }
+
+        - insert:
+            tableName: items
+            columns:
+              - column: { name: title, value: "Earbuds Charging Case" }
+              - column: { name: description, value: "Compact case for wireless earbuds." }
+              - column: { name: img_path, value: "/images/earbuds-charging-case.png" }
+              - column: { name: price, valueNumeric: 1299 }
+
+        - insert:
+            tableName: items
+            columns:
+              - column: { name: title, value: "Running Sneakers" }
+              - column: { name: description, value: "Lightweight sneakers for daily runs." }
+              - column: { name: img_path, value: "/images/running-sneakers.png" }
+              - column: { name: price, valueNumeric: 5999 }
+
+        - insert:
+            tableName: items
+            columns:
+              - column: { name: title, value: "Metal Water Bottle" }
+              - column: { name: description, value: "Reusable bottle for everyday hydration." }
+              - column: { name: img_path, value: "/images/metal-water-bottle.png" }
+              - column: { name: price, valueNumeric: 1599 }
+
+        - insert:
+            tableName: items
+            columns:
+              - column: { name: title, value: "Fitness Smartwatch" }
+              - column: { name: description, value: "Track activity, steps and workouts." }
+              - column: { name: img_path, value: "/images/fitness-smartwatch.png" }
+              - column: { name: price, valueNumeric: 7999 }
+
+        - insert:
+            tableName: items
+            columns:
+              - column: { name: title, value: "Urban Backpack" }
+              - column: { name: description, value: "Daily backpack for work and city trips." }
+              - column: { name: img_path, value: "/images/urban-backpack.png" }
+              - column: { name: price, valueNumeric: 4999 }
+
+        - insert:
+            tableName: items
+            columns:
+              - column: { name: title, value: "Soccer Ball" }
+              - column: { name: description, value: "Durable ball for outdoor games." }
+              - column: { name: img_path, value: "/images/soccer-ball.png" }
+              - column: { name: price, valueNumeric: 2499 }
+
+        - insert:
+            tableName: items
+            columns:
+              - column: { name: title, value: "Over-Ear Headphones" }
+              - column: { name: description, value: "Comfortable headphones for music and calls." }
+              - column: { name: img_path, value: "/images/over-ear-headphones.png" }
+              - column: { name: price, valueNumeric: 8999 }
+
+        - insert:
+            tableName: items
+            columns:
+              - column: { name: title, value: "Bluetooth Speaker" }
+              - column: { name: description, value: "Portable speaker with clear sound." }
+              - column: { name: img_path, value: "/images/bluetooth-speaker.png" }
+              - column: { name: price, valueNumeric: 3499 }
+
+        - insert:
+            tableName: items
+            columns:
+              - column: { name: title, value: "Digital Camera" }
+              - column: { name: description, value: "Compact camera for travel photos." }
+              - column: { name: img_path, value: "/images/digital-camera.png" }
+              - column: { name: price, valueNumeric: 19999 }
+
+        - insert:
+            tableName: items
+            columns:
+              - column: { name: title, value: "Aviator Sunglasses" }
+              - column: { name: description, value: "Classic sunglasses for sunny days." }
+              - column: { name: img_path, value: "/images/aviator-sunglasses.png" }
+              - column: { name: price, valueNumeric: 2999 }
+
+        - insert:
+            tableName: items
+            columns:
+              - column: { name: title, value: "Gray Hoodie" }
+              - column: { name: description, value: "Soft hoodie for everyday comfort." }
+              - column: { name: img_path, value: "/images/gray-hoodie.png" }
+              - column: { name: price, valueNumeric: 4499 }
+
+        - insert:
+            tableName: items
+            columns:
+              - column: { name: title, value: "Leather Wallet" }
+              - column: { name: description, value: "Slim wallet with card slots." }
+              - column: { name: img_path, value: "/images/leather-wallet.png" }
+              - column: { name: price, valueNumeric: 2799 }
+
+        - insert:
+            tableName: items
+            columns:
+              - column: { name: title, value: "Game Controller" }
+              - column: { name: description, value: "Ergonomic controller for gaming." }
+              - column: { name: img_path, value: "/images/game-controller.png" }
+              - column: { name: price, valueNumeric: 5999 }
+
+        - insert:
+            tableName: items
+            columns:
+              - column: { name: title, value: "Coffee Travel Tumbler" }
+              - column: { name: description, value: "Reusable tumbler for drinks on the go." }
+              - column: { name: img_path, value: "/images/coffee-travel-tumbler.png" }
+              - column: { name: price, valueNumeric: 1799 }
+
+        - insert:
+            tableName: items
+            columns:
+              - column: { name: title, value: "Thermal Travel Cup" }
+              - column: { name: description, value: "Insulated cup to keep drinks warm." }
+              - column: { name: img_path, value: "/images/thermal-travel-cup.png" }
+              - column: { name: price, valueNumeric: 2199 }
+
+        - insert:
+            tableName: items
+            columns:
+              - column: { name: title, value: "Trail Running Shoes" }
+              - column: { name: description, value: "Shoes with grip for outdoor trails." }
+              - column: { name: img_path, value: "/images/trail-running-shoes.png" }
+              - column: { name: price, valueNumeric: 7499 }
+
+        - insert:
+            tableName: items
+            columns:
+              - column: { name: title, value: "Smartphone" }
+              - column: { name: description, value: "Modern smartphone for everyday use." }
+              - column: { name: img_path, value: "/images/smartphone.png" }
+              - column: { name: price, valueNumeric: 29999 }
+
+        - insert:
+            tableName: items
+            columns:
+              - column: { name: title, value: "Sport Sneakers" }
+              - column: { name: description, value: "Comfortable sneakers for casual wear." }
+              - column: { name: img_path, value: "/images/sport-sneakers.png" }
+              - column: { name: price, valueNumeric: 5499 }
+
+        - insert:
+            tableName: items
+            columns:
+              - column: { name: title, value: "Compact Power Bank" }
+              - column: { name: description, value: "Portable charger for your devices." }
+              - column: { name: img_path, value: "/images/compact-power-bank.png" }
+              - column: { name: price, valueNumeric: 2499 }
+
+        - insert:
+            tableName: items
+            columns:
+              - column: { name: title, value: "Fitness Wristband" }
+              - column: { name: description, value: "Light wristband for daily activity tracking." }
+              - column: { name: img_path, value: "/images/fitness-wristband.png" }
+              - column: { name: price, valueNumeric: 1299 }
+
+        - insert:
+            tableName: items
+            columns:
+              - column: { name: title, value: "Leather Belt" }
+              - column: { name: description, value: "Classic belt for everyday outfits." }
+              - column: { name: img_path, value: "/images/leather-belt.png" }
+              - column: { name: price, valueNumeric: 1999 }
+
+        - insert:
+            tableName: items
+            columns:
+              - column: { name: title, value: "Leather Shoulder Bag" }
+              - column: { name: description, value: "Compact bag for essentials." }
+              - column: { name: img_path, value: "/images/leather-shoulder-bag.png" }
+              - column: { name: price, valueNumeric: 8999 }
+
+        - insert:
+            tableName: items
+            columns:
+              - column: { name: title, value: "Classic Umbrella" }
+              - column: { name: description, value: "Everyday umbrella for rainy weather." }
+              - column: { name: img_path, value: "/images/classic-umbrella.png" }
+              - column: { name: price, valueNumeric: 1699 }
+
+      rollback:
+        - delete:
+            tableName: items
+            where: "img_path LIKE '/images/%'"

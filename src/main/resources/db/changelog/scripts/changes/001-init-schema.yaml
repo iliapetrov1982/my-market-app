@@ -1,0 +1,242 @@
+databaseChangeLog:
+  - changeSet:
+      id: 001-init-schema
+      author: ilia-petrov
+
+      changes:
+        # ============================================================
+        # 1) ITEMS (каталог товаров)
+        # ============================================================
+        - createTable:
+            tableName: items
+            columns:
+              - column:
+                  name: id
+                  type: bigint
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+                    primaryKeyName: pk_items
+
+              - column:
+                  name: title
+                  type: varchar(255)
+                  constraints:
+                    nullable: false
+
+              - column:
+                  name: description
+                  type: text
+                  constraints:
+                    nullable: false
+
+              - column:
+                  name: img_path
+                  type: varchar(512)
+                  constraints:
+                    nullable: false
+
+              - column:
+                  name: price
+                  type: bigint
+                  constraints:
+                    nullable: false
+
+              - column:
+                  name: created_at
+                  type: timestamptz
+                  defaultValueComputed: now()
+                  constraints:
+                    nullable: false
+
+        - createIndex:
+            tableName: items
+            indexName: idx_items_title
+            columns:
+              - column:
+                  name: title
+
+        - createIndex:
+            tableName: items
+            indexName: idx_items_price
+            columns:
+              - column:
+                  name: price
+
+        # CHECK: price >= 0 (через SQL для максимальной совместимости)
+        - sql:
+            dbms: postgresql
+            sql: |
+              ALTER TABLE items
+              ADD CONSTRAINT chk_items_price_non_negative
+              CHECK (price >= 0);
+
+        # ============================================================
+        # 2) CART_ITEMS (корзина)
+        # В ТЗ нет пользователей -> одна "общая" корзина.
+        # Один товар может быть в корзине максимум один раз.
+        # ============================================================
+        - createTable:
+            tableName: cart_items
+            columns:
+              - column:
+                  name: item_id
+                  type: bigint
+                  constraints:
+                    nullable: false
+                    primaryKey: true
+                    primaryKeyName: pk_cart_items
+
+              - column:
+                  name: quantity
+                  type: int
+                  constraints:
+                    nullable: false
+
+        - addForeignKeyConstraint:
+            baseTableName: cart_items
+            baseColumnNames: item_id
+            referencedTableName: items
+            referencedColumnNames: id
+            constraintName: fk_cart_items_item
+            onDelete: CASCADE
+
+        - sql:
+            dbms: postgresql
+            sql: |
+              ALTER TABLE cart_items
+              ADD CONSTRAINT chk_cart_items_quantity_positive
+              CHECK (quantity > 0);
+
+        # ============================================================
+        # 3) ORDERS (заказы)
+        # total_sum храним для быстрого отображения в UI.
+        # ============================================================
+        - createTable:
+            tableName: orders
+            columns:
+              - column:
+                  name: id
+                  type: bigint
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+                    primaryKeyName: pk_orders
+
+              - column:
+                  name: created_at
+                  type: timestamptz
+                  defaultValueComputed: now()
+                  constraints:
+                    nullable: false
+
+              - column:
+                  name: total_sum
+                  type: bigint
+                  constraints:
+                    nullable: false
+
+        - createIndex:
+            tableName: orders
+            indexName: idx_orders_created_at
+            columns:
+              - column:
+                  name: created_at
+
+        - sql:
+            dbms: postgresql
+            sql: |
+              ALTER TABLE orders
+              ADD CONSTRAINT chk_orders_total_non_negative
+              CHECK (total_sum >= 0);
+
+        # ============================================================
+        # 4) ORDER_ITEMS (позиции заказа)
+        # PK(order_id, item_id) + snapshot title/price.
+        # ============================================================
+        - createTable:
+            tableName: order_items
+            columns:
+              - column:
+                  name: order_id
+                  type: bigint
+                  constraints:
+                    nullable: false
+
+              - column:
+                  name: item_id
+                  type: bigint
+                  constraints:
+                    nullable: false
+
+              - column:
+                  name: title
+                  type: varchar(255)
+                  constraints:
+                    nullable: false
+
+              - column:
+                  name: price
+                  type: bigint
+                  constraints:
+                    nullable: false
+
+              - column:
+                  name: quantity
+                  type: int
+                  constraints:
+                    nullable: false
+
+        - addPrimaryKey:
+            tableName: order_items
+            columnNames: order_id, item_id
+            constraintName: pk_order_items
+
+        - addForeignKeyConstraint:
+            baseTableName: order_items
+            baseColumnNames: order_id
+            referencedTableName: orders
+            referencedColumnNames: id
+            constraintName: fk_order_items_order
+            onDelete: CASCADE
+
+        - addForeignKeyConstraint:
+            baseTableName: order_items
+            baseColumnNames: item_id
+            referencedTableName: items
+            referencedColumnNames: id
+            constraintName: fk_order_items_item
+            # RESTRICT — чтобы нельзя было удалить товар, который встречается в заказах
+            # (если захочешь иначе — поменяем на NO ACTION/CASCADE).
+            onDelete: RESTRICT
+
+        - createIndex:
+            tableName: order_items
+            indexName: idx_order_items_order_id
+            columns:
+              - column:
+                  name: order_id
+
+        - sql:
+            dbms: postgresql
+            sql: |
+              ALTER TABLE order_items
+              ADD CONSTRAINT chk_order_items_quantity_positive
+              CHECK (quantity > 0);
+
+        - sql:
+            dbms: postgresql
+            sql: |
+              ALTER TABLE order_items
+              ADD CONSTRAINT chk_order_items_price_non_negative
+              CHECK (price >= 0);
+
+      rollback:
+        - dropTable:
+            tableName: order_items
+        - dropTable:
+            tableName: orders
+        - dropTable:
+            tableName: cart_items
+        - dropTable:
+            tableName: items

@@ -1,0 +1,5 @@
+databaseChangeLog:
+  - include:
+      file: db/changelog/scripts/changes/001-init-schema.yaml
+  - include:
+      file: db/changelog/scripts/changes/002-seed-items.yaml
