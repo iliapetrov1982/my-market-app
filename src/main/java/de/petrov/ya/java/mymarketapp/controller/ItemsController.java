@@ -36,6 +36,6 @@ public class ItemsController {
         model.addAttribute("sort", page.sort());
         model.addAttribute("paging", page.paging());
 
-        return "items";
+        return "items"; // returns items.html
     }
 }

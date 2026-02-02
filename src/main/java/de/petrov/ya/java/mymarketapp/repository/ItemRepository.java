@@ -2,6 +2,7 @@ package de.petrov.ya.java.mymarketapp.repository;
 
 import de.petrov.ya.java.mymarketapp.dto.ItemDto;
 import de.petrov.ya.java.mymarketapp.entity.Item;
+
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -9,6 +10,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface ItemRepository extends JpaRepository<Item, Long> {
+
     @Query("""
         select new de.petrov.ya.java.mymarketapp.dto.ItemDto(
             i.id, i.title, i.description, i.imgPath, i.price,
@@ -16,7 +18,7 @@ public interface ItemRepository extends JpaRepository<Item, Long> {
         )
         from Item i
         left join CartItem ci on ci.item = i
-        where (:q is null or :q = '' 
+        where (:q is null or :q = ''
             or lower(i.title) like lower(concat('%', :q, '%'))
             or lower(i.description) like lower(concat('%', :q, '%'))
         )
