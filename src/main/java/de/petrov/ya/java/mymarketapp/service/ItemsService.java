@@ -91,4 +91,10 @@ public class ItemsService {
             String search,
             String sort
     ) {}
+
+    @Transactional(readOnly = true)
+    public ItemDto getItem(long id) {
+        return itemRepository.findItemPage(id)
+                .orElseThrow(() -> new IllegalArgumentException("Item not found: " + id));
+    }
 }

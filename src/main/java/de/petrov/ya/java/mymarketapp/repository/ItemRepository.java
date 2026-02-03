@@ -9,6 +9,8 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.Optional;
+
 public interface ItemRepository extends JpaRepository<Item, Long> {
 
     @Query("""
@@ -24,4 +26,15 @@ public interface ItemRepository extends JpaRepository<Item, Long> {
         )
         """)
     Page<ItemDto> findShowcase(@Param("q") String q, Pageable pageable);
+
+    @Query("""
+        select new de.petrov.ya.java.mymarketapp.dto.page.ItemDto(
+            i.id, i.title, i.description, i.imgPath, i.price,
+            coalesce(ci.quantity, 0)
+        )
+        from Item i
+        left join CartItem ci on ci.item = i
+        where i.id = :id
+        """)
+    Optional<ItemDto> findItemPage(@Param("id") long id);
 }

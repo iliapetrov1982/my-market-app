@@ -1,6 +1,7 @@
 package de.petrov.ya.java.mymarketapp.controller;
 
 import de.petrov.ya.java.mymarketapp.dto.cart.CartAction;
+import de.petrov.ya.java.mymarketapp.dto.page.ItemDto;
 import de.petrov.ya.java.mymarketapp.dto.page.ItemsSort;
 import de.petrov.ya.java.mymarketapp.service.CartService;
 import de.petrov.ya.java.mymarketapp.service.ItemsService;
@@ -8,6 +9,7 @@ import de.petrov.ya.java.mymarketapp.service.ItemsService;
 import org.springframework.ui.Model;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
@@ -66,5 +68,12 @@ public class ItemsController {
         ra.addAttribute("pageSize", pageSize == null ? 5 : pageSize);
 
         return "redirect:/items";
+    }
+
+    @GetMapping("/items/{id}")
+    public String item(@PathVariable long id, Model model) {
+        ItemDto dto = itemsService.getItem(id);
+        model.addAttribute("item", dto);
+        return "item";
     }
 }
