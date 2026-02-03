@@ -2,7 +2,8 @@ package de.petrov.ya.java.mymarketapp.dto.cart;
 
 public enum CartAction {
     PLUS,
-    MINUS;
+    MINUS,
+    DELETE;
 
     public static CartAction from(String raw) {
         if (raw == null) {
