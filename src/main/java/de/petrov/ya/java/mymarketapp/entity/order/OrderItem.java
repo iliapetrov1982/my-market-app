@@ -23,7 +23,7 @@ import lombok.ToString;
 @Getter
 @ToString(onlyExplicitlyIncluded = true)
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
-@NoArgsConstructor(access = AccessLevel.PROTECTED)
+@NoArgsConstructor
 public class OrderItem {
 
     @EmbeddedId
@@ -39,9 +39,13 @@ public class OrderItem {
     @JoinColumn(name = "item_id", nullable = false)
     private Item item;
 
-    @Column(name = "quantity", nullable = false)
-    private Integer quantity;
+    // snapshot-поля (обязательные)
+    @Column(name = "title", nullable = false, length = 255)
+    private String title;
 
     @Column(name = "price", nullable = false)
     private Long price;
+
+    @Column(name = "quantity", nullable = false)
+    private Integer quantity;
 }
