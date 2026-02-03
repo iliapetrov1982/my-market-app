@@ -76,4 +76,15 @@ public class ItemsController {
         model.addAttribute("item", dto);
         return "item";
     }
+
+    @PostMapping("/items/{id}")
+    public String changeItemCount(
+            @PathVariable long id,
+            @RequestParam("action") String action,
+            Model model
+    ) {
+        cartService.changeQuantity(id, CartAction.from(action));
+        model.addAttribute("item", itemsService.getItemPage(id)); // обновлённый count
+        return "item";
+    }
 }

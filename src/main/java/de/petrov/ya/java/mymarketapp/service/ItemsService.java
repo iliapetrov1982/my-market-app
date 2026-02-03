@@ -5,6 +5,7 @@ import de.petrov.ya.java.mymarketapp.dto.page.ItemsSort;
 import de.petrov.ya.java.mymarketapp.dto.page.Paging;
 import de.petrov.ya.java.mymarketapp.repository.ItemRepository;
 
+import jakarta.persistence.EntityNotFoundException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -96,5 +97,12 @@ public class ItemsService {
     public ItemDto getItem(long id) {
         return itemRepository.findItemPage(id)
                 .orElseThrow(() -> new IllegalArgumentException("Item not found: " + id));
+    }
+
+    @Transactional(readOnly = true)
+    public ItemDto getItemPage(long id) {
+        ItemDto dto = itemRepository.findItemWithCount(id);
+        if (dto == null) throw new EntityNotFoundException("Item not found: " + id);
+        return dto;
     }
 }

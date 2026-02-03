@@ -37,4 +37,15 @@ public interface ItemRepository extends JpaRepository<Item, Long> {
         where i.id = :id
         """)
     Optional<ItemDto> findItemPage(@Param("id") long id);
+
+    @Query("""
+    select new de.petrov.ya.java.mymarketapp.dto.page.ItemDto(
+        i.id, i.title, i.description, i.imgPath, i.price,
+        coalesce(ci.quantity, 0)
+    )
+    from Item i
+    left join CartItem ci on ci.item = i
+    where i.id = :id
+    """)
+    ItemDto findItemWithCount(@Param("id") long id);
 }
