@@ -9,6 +9,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.List;
 import java.util.Optional;
 
 public interface ItemRepository extends JpaRepository<Item, Long> {
@@ -48,4 +49,15 @@ public interface ItemRepository extends JpaRepository<Item, Long> {
     where i.id = :id
     """)
     ItemDto findItemWithCount(@Param("id") long id);
+
+    @Query("""
+        select new de.petrov.ya.java.mymarketapp.dto.page.ItemDto(
+            i.id, i.title, i.description, i.imgPath, i.price,
+            ci.quantity
+        )
+        from CartItem ci
+        join ci.item i
+        order by i.id
+        """)
+    List<ItemDto> findCartItems();
 }
