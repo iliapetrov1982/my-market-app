@@ -1,8 +1,8 @@
 package de.petrov.ya.java.mymarketapp.service;
 
-import de.petrov.ya.java.mymarketapp.dto.ItemDto;
-import de.petrov.ya.java.mymarketapp.dto.ItemsSort;
-import de.petrov.ya.java.mymarketapp.dto.Paging;
+import de.petrov.ya.java.mymarketapp.dto.page.ItemDto;
+import de.petrov.ya.java.mymarketapp.dto.page.ItemsSort;
+import de.petrov.ya.java.mymarketapp.dto.page.Paging;
 import de.petrov.ya.java.mymarketapp.repository.ItemRepository;
 
 import org.springframework.data.domain.Page;

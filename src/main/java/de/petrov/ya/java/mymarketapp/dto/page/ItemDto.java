@@ -1,4 +1,4 @@
-package de.petrov.ya.java.mymarketapp.dto;
+package de.petrov.ya.java.mymarketapp.dto.page;
 
 public record ItemDto(
         long id,

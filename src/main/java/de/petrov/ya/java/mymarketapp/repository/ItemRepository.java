@@ -1,6 +1,6 @@
 package de.petrov.ya.java.mymarketapp.repository;
 
-import de.petrov.ya.java.mymarketapp.dto.ItemDto;
+import de.petrov.ya.java.mymarketapp.dto.page.ItemDto;
 import de.petrov.ya.java.mymarketapp.entity.Item;
 
 import org.springframework.data.domain.Page;
@@ -12,7 +12,7 @@ import org.springframework.data.repository.query.Param;
 public interface ItemRepository extends JpaRepository<Item, Long> {
 
     @Query("""
-        select new de.petrov.ya.java.mymarketapp.dto.ItemDto(
+        select new de.petrov.ya.java.mymarketapp.dto.page.ItemDto(
             i.id, i.title, i.description, i.imgPath, i.price,
             coalesce(ci.quantity, 0)
         )

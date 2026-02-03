@@ -23,7 +23,7 @@ import lombok.ToString;
 @Getter
 @ToString(onlyExplicitlyIncluded = true)
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
-@NoArgsConstructor(access = AccessLevel.PROTECTED)
+@NoArgsConstructor(access = AccessLevel.PUBLIC)
 public class CartItem {
     @Id
     @Column(name = "item_id")
