@@ -40,12 +40,12 @@ public class BuyService {
             var item = ci.getItem();
 
             OrderItem oi = new OrderItem();
-            oi.setId(new OrderItemId(order.getId(), item.getId())); // ✅ теперь тип совпадает
+            oi.setId(new OrderItemId(order.getId(), item.getId()));
             oi.setOrder(order);
             oi.setItem(item);
 
-            oi.setTitle(item.getTitle());          // ✅ иначе падало по NOT NULL title
-            oi.setPrice(item.getPrice());          // ✅ snapshot цены
+            oi.setTitle(item.getTitle());          // иначе падало по NOT NULL title
+            oi.setPrice(item.getPrice());          // snapshot цены
             oi.setQuantity(ci.getQuantity());
 
             // добавляем в коллекцию заказа (cascade сохранит order_items)
