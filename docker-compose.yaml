@@ -22,5 +22,29 @@ services:
       timeout: 3s
       retries: 20
 
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: my-market-app
+    restart: unless-stopped
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+    environment:
+      TZ: Europe/Berlin
+
+      SERVER_PORT: "8080"
+
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/my-market-app
+      SPRING_DATASOURCE_USERNAME: my_market_user
+      SPRING_DATASOURCE_PASSWORD: my_market_pass
+      SPRING_LIQUIBASE_ENABLED: "true"
+
+    ports:
+      - "8080:8080"
+
 volumes:
   pg16_data:
