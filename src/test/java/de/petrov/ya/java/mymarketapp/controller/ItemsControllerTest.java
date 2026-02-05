@@ -4,7 +4,7 @@ import de.petrov.ya.java.mymarketapp.dto.cart.CartAction;
 import de.petrov.ya.java.mymarketapp.dto.page.ItemDto;
 import de.petrov.ya.java.mymarketapp.dto.page.ItemsSort;
 import de.petrov.ya.java.mymarketapp.dto.page.Paging;
-import de.petrov.ya.java.mymarketapp.service.CartService;
+import de.petrov.ya.java.mymarketapp.service.CartCommandService;
 import de.petrov.ya.java.mymarketapp.service.ItemsService;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -43,10 +43,12 @@ class ItemsControllerTest {
     ItemsService itemsService;
 
     @MockitoBean
-    CartService cartService;
+    CartCommandService cartService;
 
     private static ItemDto dto(long id, int count) {
-        return new ItemDto(id, "T" + id, "D" + id, "/images/" + id + ".png", 1000L + id, count);
+        return new ItemDto(
+                id, "T" + id, "D" + id, "/images/" + id + ".png", 1000L + id, count
+        );
     }
 
     @Test
@@ -121,7 +123,7 @@ class ItemsControllerTest {
                 .andExpect(status().is3xxRedirection())
                 .andExpect(redirectedUrl("/items?search=q&sort=ALPHA&pageNumber=3&pageSize=20"));
 
-        verify(cartService).changeQuantity(5L, CartAction.PLUS);
+        verify(cartService).apply(5L, CartAction.PLUS);
         // itemsService тут не должен дергаться
         verifyNoInteractions(itemsService);
     }
@@ -137,7 +139,7 @@ class ItemsControllerTest {
                 // default pageNumber=1, pageSize=5
                 .andExpect(redirectedUrl("/items?search=q&sort=NO&pageNumber=1&pageSize=5"));
 
-        verify(cartService).changeQuantity(7L, CartAction.MINUS);
+        verify(cartService).apply(7L, CartAction.MINUS);
     }
 
     @Test
@@ -164,7 +166,7 @@ class ItemsControllerTest {
                 .andExpect(view().name("item"))
                 .andExpect(model().attributeExists("item"));
 
-        verify(cartService).changeQuantity(10L, CartAction.PLUS);
+        verify(cartService).apply(10L, CartAction.PLUS);
         verify(itemsService).getItemPage(10L);
     }
 }

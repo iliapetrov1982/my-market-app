@@ -8,10 +8,10 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.OneToMany;
+import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 
 import lombok.AccessLevel;
-import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -26,8 +26,7 @@ import java.util.List;
 @Setter
 @Getter
 @ToString(onlyExplicitlyIncluded = true)
-@AllArgsConstructor(access = AccessLevel.PRIVATE)
-@NoArgsConstructor
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Order {
 
     @Id
@@ -47,8 +46,19 @@ public class Order {
     )
     private List<OrderItem> items = new ArrayList<>();
 
+    public Order(Long totalSum) {
+        this.totalSum = totalSum;
+    }
+
     public void addItem(OrderItem orderItem) {
         items.add(orderItem);
         orderItem.setOrder(this);
+    }
+
+    @PrePersist
+    void prePersist() {
+        if (createdAt == null) {
+            createdAt = OffsetDateTime.now();
+        }
     }
 }

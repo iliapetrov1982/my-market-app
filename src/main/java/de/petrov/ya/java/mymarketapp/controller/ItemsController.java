@@ -3,9 +3,10 @@ package de.petrov.ya.java.mymarketapp.controller;
 import de.petrov.ya.java.mymarketapp.dto.cart.CartAction;
 import de.petrov.ya.java.mymarketapp.dto.page.ItemDto;
 import de.petrov.ya.java.mymarketapp.dto.page.ItemsSort;
-import de.petrov.ya.java.mymarketapp.service.CartService;
 import de.petrov.ya.java.mymarketapp.service.ItemsService;
+import de.petrov.ya.java.mymarketapp.service.CartCommandService;
 
+import lombok.RequiredArgsConstructor;
 import org.springframework.ui.Model;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -15,17 +16,10 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 @Controller
+@RequiredArgsConstructor
 public class ItemsController {
     private final ItemsService itemsService;
-    private final CartService cartService;
-
-    public ItemsController(
-            ItemsService itemsService,
-            CartService cartService
-    ) {
-        this.itemsService = itemsService;
-        this.cartService = cartService;
-    }
+    private final CartCommandService cartService;
 
     @GetMapping({"/", "/items"})
     public String items(
@@ -60,7 +54,7 @@ public class ItemsController {
             @RequestParam("action") String action,
             RedirectAttributes ra
     ) {
-        cartService.changeQuantity(id, CartAction.from(action));
+        cartService.apply(id, CartAction.from(action));
 
         ra.addAttribute("search", search);
         ra.addAttribute("sort", sort);
@@ -83,7 +77,7 @@ public class ItemsController {
             @RequestParam("action") String action,
             Model model
     ) {
-        cartService.changeQuantity(id, CartAction.from(action));
+        cartService.apply(id, CartAction.from(action));
         model.addAttribute("item", itemsService.getItemPage(id)); // обновлённый count
         return "item";
     }

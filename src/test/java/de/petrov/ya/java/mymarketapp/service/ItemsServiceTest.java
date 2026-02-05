@@ -5,6 +5,7 @@ import de.petrov.ya.java.mymarketapp.dto.page.ItemsSort;
 import de.petrov.ya.java.mymarketapp.dto.page.Paging;
 import de.petrov.ya.java.mymarketapp.repository.ItemRepository;
 import jakarta.persistence.EntityNotFoundException;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -203,24 +204,26 @@ class ItemsServiceTest {
     @Test
     void getItemPage_returnsDto_whenRepositoryReturnsNonNull() {
         ItemDto dto = dto(7, "X", 700, 2);
-        when(itemRepository.findItemWithCount(7L)).thenReturn(dto);
+        when(itemRepository.findItemPage(7L)).thenReturn(Optional.of(dto));
 
         ItemDto result = itemsService.getItemPage(7L);
 
         assertThat(result.id(), equalTo(7L));
         assertThat(result.count(), equalTo(2));
-        verify(itemRepository).findItemWithCount(7L);
+        verify(itemRepository).findItemPage(7L);
     }
 
     @Test
-    void getItemPage_throwsEntityNotFoundException_whenRepositoryReturnsNull() {
-        when(itemRepository.findItemWithCount(999L)).thenReturn(null);
+    void getItemPage_throwsEntityNotFoundException_whenRepositoryReturnsEmptyOptional() {
+        when(itemRepository.findItemPage(999L))
+                .thenReturn(Optional.empty());
 
-        var ex = org.junit.jupiter.api.Assertions.assertThrows(
+        var ex = Assertions.assertThrows(
                 EntityNotFoundException.class,
                 () -> itemsService.getItemPage(999L)
         );
 
         assertThat(ex.getMessage(), containsString("Item not found: 999"));
     }
+
 }

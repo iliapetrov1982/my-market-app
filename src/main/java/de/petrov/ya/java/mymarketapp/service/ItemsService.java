@@ -101,8 +101,7 @@ public class ItemsService {
 
     @Transactional(readOnly = true)
     public ItemDto getItemPage(long id) {
-        ItemDto dto = itemRepository.findItemWithCount(id);
-        if (dto == null) throw new EntityNotFoundException("Item not found: " + id);
-        return dto;
+        return itemRepository.findItemPage(id)
+                .orElseThrow(() -> new EntityNotFoundException("Item not found: " + id));
     }
 }

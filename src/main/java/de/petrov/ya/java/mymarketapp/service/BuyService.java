@@ -28,9 +28,8 @@ public class BuyService {
         }
 
         // создаём заказ сразу с totalSum=0 (NOT NULL)
-        Order order = new Order();
+        Order order = new Order(0L);
         order.setCreatedAt(OffsetDateTime.now());
-        order.setTotalSum(0L);
         order = orderRepository.save(order);
 
         long totalSum = 0L;

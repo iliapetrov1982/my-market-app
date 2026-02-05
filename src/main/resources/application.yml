@@ -6,10 +6,16 @@ spring:
     change-log: classpath:/db/changelog/scripts/db.changelog-master.yaml
 
   datasource:
-    url: jdbc:postgresql://localhost:5432/my-market-app
-    username: my_market_user
-    password: my_market_pass
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/my-market-app}
+    username: ${SPRING_DATASOURCE_USERNAME:my_market_user}
+    password: ${SPRING_DATASOURCE_PASSWORD:my_market_pass}
     driver-class-name: org.postgresql.Driver
 
-  jpa:
-    open-in-view: false
+    jpa:
+      open-in-view: false
+      hibernate:
+        ddl-auto: validate
+      properties:
+        hibernate:
+          jdbc:
+            time_zone: UTC

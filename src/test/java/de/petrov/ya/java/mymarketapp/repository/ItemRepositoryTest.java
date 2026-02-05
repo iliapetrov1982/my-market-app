@@ -102,9 +102,10 @@ class ItemRepositoryTest extends MyMarketAppApplicationTests {
                 .getContent()
                 .getFirst();
 
-        ItemDto dto = itemRepository.findItemWithCount(firstItem.getId());
+        ItemDto dto = itemRepository.findItemPage(firstItem.getId())
+                .orElseThrow(() -> new AssertionError("Item not found: " + firstItem.getId()));
 
-        assertThat(dto, notNullValue());
+//        assertThat(dto, notNullValue());
         assertThat(dto.id(), equalTo(firstItem.getId()));
         assertThat("Товар не в корзине → count = 0", dto.count(), equalTo(0));
     }
