@@ -3,67 +3,87 @@ package de.petrov.ya.java.mymarketapp.service;
 import de.petrov.ya.java.mymarketapp.dto.page.ItemDto;
 import de.petrov.ya.java.mymarketapp.dto.page.ItemsSort;
 import de.petrov.ya.java.mymarketapp.dto.page.Paging;
-import de.petrov.ya.java.mymarketapp.repository.ItemRepository;
-
-import jakarta.persistence.EntityNotFoundException;
-import org.springframework.data.domain.Page;
+import de.petrov.ya.java.mymarketapp.repository.ItemQueryRepository;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import reactor.core.publisher.Mono;
 
 import java.util.ArrayList;
 import java.util.List;
 
 @Service
 public class ItemsService {
-    private final ItemRepository itemRepository;
 
-    public ItemsService(ItemRepository itemRepository) {
-        this.itemRepository = itemRepository;
+    private final ItemQueryRepository itemQueryRepository;
+
+    public ItemsService(ItemQueryRepository itemQueryRepository) {
+        this.itemQueryRepository = itemQueryRepository;
     }
 
-    @Transactional(readOnly = true)
-    public ItemsPage getItemsPage(String search, ItemsSort sort, int pageNumber, int pageSize) {
+    public Mono<ItemsPage> getItemsPage(String search, ItemsSort sort, int pageNumber, int pageSize) {
         String safeSearch = (search == null) ? "" : search.trim();
 
         int safePageSize = normalizePageSize(pageSize);
         int safePageNumber = Math.max(1, pageNumber);
 
-        Sort jpaSort = switch (sort) {
+        Sort uiSort = switch (sort) {
             case ALPHA -> Sort.by(Sort.Order.asc("title"), Sort.Order.asc("id"));
             case PRICE -> Sort.by(Sort.Order.asc("price"), Sort.Order.asc("id"));
             case NO -> Sort.by(Sort.Order.asc("id"));
         };
 
-        Pageable pageable = PageRequest.of(safePageNumber - 1, safePageSize, jpaSort);
+        // В R2DBC сортировку реально применяем в SQL.
+        // Поэтому Sort здесь держим только для UI/логики PageRequest.
+        var pageable = PageRequest.of(safePageNumber - 1, safePageSize, uiSort);
 
-        Page<ItemDto> page = itemRepository.findShowcase(
-                safeSearch.isBlank() ? null : safeSearch,
-                pageable
-        );
+        return loadPage(safeSearch, sort, pageable)
+                .flatMap(page -> {
+                    // если ушли сильно за конец — отдаём последнюю страницу (как раньше)
+                    int totalPages = page.getTotalPages();
+                    if (totalPages > 0 && safePageNumber > totalPages) {
+                        int lastPage = totalPages;
+                        var lastPageable = PageRequest.of(lastPage - 1, safePageSize, uiSort);
+                        return loadPage(safeSearch, sort, lastPageable);
+                    }
+                    return Mono.just(page);
+                })
+                .map(page -> {
+                    Paging paging = new Paging(
+                            safePageSize,
+                            page.getNumber() + 1,
+                            page.hasPrevious(),
+                            page.hasNext()
+                    );
 
-        // Если пользователь запросил страницу сильно дальше конца — отдадим последнюю страницу
-        if (page.getTotalPages() > 0 && safePageNumber > page.getTotalPages()) {
-            safePageNumber = page.getTotalPages();
-            pageable = PageRequest.of(safePageNumber - 1, safePageSize, jpaSort);
-            page = itemRepository.findShowcase(safeSearch.isBlank() ? null : safeSearch, pageable);
-        }
+                    return new ItemsPage(
+                            toRowsOfThree(page.getContent()),
+                            paging,
+                            safeSearch,
+                            sort.name()
+                    );
+                });
+    }
 
-        Paging paging = new Paging(
-                safePageSize,
-                safePageNumber,
-                page.hasPrevious(),
-                page.hasNext()
-        );
+    /**
+     * Загружает данные + total и собирает PageImpl.
+     */
+    private Mono<PageImpl<ItemDto>> loadPage(String search, ItemsSort sort, PageRequest pageable) {
+        String q = search.isBlank() ? "" : search;
 
-        return new ItemsPage(
-                toRowsOfThree(page.getContent()),
-                paging,
-                safeSearch,
-                sort.name()
-        );
+        int limit = pageable.getPageSize();
+        int offset = (int) pageable.getOffset();
+
+        // Сортировку применяем в SQL: для этого передаём sort вниз.
+        Mono<List<ItemDto>> dataMono = itemQueryRepository
+                .findShowcase(q, sort, limit, offset)
+                .collectList();
+
+        Mono<Long> totalMono = itemQueryRepository.countShowcase(q);
+
+        return Mono.zip(dataMono, totalMono)
+                .map(t -> new PageImpl<>(t.getT1(), pageable, t.getT2()));
     }
 
     private int normalizePageSize(int pageSize) {
@@ -93,15 +113,15 @@ public class ItemsService {
             String sort
     ) {}
 
-    @Transactional(readOnly = true)
-    public ItemDto getItem(long id) {
-        return itemRepository.findItemPage(id)
-                .orElseThrow(() -> new IllegalArgumentException("Item not found: " + id));
+    public Mono<ItemDto> getItem(long id) {
+        // "не 404" метод можно оставить как IllegalArgumentException (как раньше),
+        return itemQueryRepository.findItemPage(id)
+                .switchIfEmpty(Mono.error(new IllegalArgumentException("Item not found: " + id)));
     }
 
-    @Transactional(readOnly = true)
-    public ItemDto getItemPage(long id) {
-        return itemRepository.findItemPage(id)
-                .orElseThrow(() -> new EntityNotFoundException("Item not found: " + id));
+    public Mono<ItemDto> getItemPage(long id) {
+        // для 404 (как раньше EntityNotFoundException)
+        return itemQueryRepository.findItemPage(id)
+                .switchIfEmpty(Mono.error(new de.petrov.ya.java.mymarketapp.exception.EntityNotFoundException("Item not found: " + id)));
     }
 }

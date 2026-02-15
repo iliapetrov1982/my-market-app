@@ -1,9 +1,9 @@
 package de.petrov.ya.java.mymarketapp.service;
 
 import de.petrov.ya.java.mymarketapp.dto.page.ItemDto;
-import de.petrov.ya.java.mymarketapp.repository.ItemRepository;
+import de.petrov.ya.java.mymarketapp.repository.ItemQueryRepository;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import reactor.core.publisher.Mono;
 
 import java.util.List;
 
@@ -12,20 +12,23 @@ public class CartViewService {
 
     public record CartPage(List<ItemDto> items, long total) {}
 
-    private final ItemRepository itemRepository;
+    private final ItemQueryRepository itemQueryRepository;
 
-    public CartViewService(ItemRepository itemRepository) {
-        this.itemRepository = itemRepository;
+    public CartViewService(ItemQueryRepository itemQueryRepository) {
+        this.itemQueryRepository = itemQueryRepository;
     }
 
-    @Transactional(readOnly = true)
-    public CartPage getCartPage() {
-        List<ItemDto> items = itemRepository.findCartItems();
+    public Mono<CartPage> getCartPage() {
 
-        long total = items.stream()
-                .mapToLong(i -> i.price() * (long) i.count())
-                .sum();
+        return itemQueryRepository.findCartItems()
+                .collectList()
+                .map(items -> {
 
-        return new CartPage(items, total);
+                    long total = items.stream()
+                            .mapToLong(i -> i.price() * (long) i.count())
+                            .sum();
+
+                    return new CartPage(items, total);
+                });
     }
 }

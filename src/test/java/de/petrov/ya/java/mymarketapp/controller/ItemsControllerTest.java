@@ -6,67 +6,64 @@ import de.petrov.ya.java.mymarketapp.dto.page.ItemsSort;
 import de.petrov.ya.java.mymarketapp.dto.page.Paging;
 import de.petrov.ya.java.mymarketapp.service.CartCommandService;
 import de.petrov.ya.java.mymarketapp.service.ItemsService;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.boot.webflux.test.autoconfigure.WebFluxTest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
-import org.springframework.test.web.servlet.MockMvc;
-
-import java.util.List;
+import org.springframework.test.web.reactive.server.WebTestClient;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.equalTo;
-import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.Matchers.nullValue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.model;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.redirectedUrl;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.view;
 
-@WebMvcTest(ItemsController.class)
+@WebFluxTest(ItemsController.class)
 class ItemsControllerTest {
 
     @Autowired
-    MockMvc mockMvc;
+    private WebTestClient webTestClient;
 
     @MockitoBean
-    ItemsService itemsService;
+    private ItemsService itemsService;
 
     @MockitoBean
-    CartCommandService cartService;
+    private CartCommandService cartService;
 
     private static ItemDto dto(long id, int count) {
         return new ItemDto(
-                id, "T" + id, "D" + id, "/images/" + id + ".png", 1000L + id, count
+                id,
+                "T" + id,
+                "D" + id,
+                "/images/" + id + ".png",
+                1000L + id,
+                count
         );
     }
 
     @Test
-    void getItems_defaultParams_rendersItemsView_andPutsModelAttributes() throws Exception {
-        var page = new ItemsService.ItemsPage(
+    void getItems_defaultParams_rendersItemsView_andPutsModelAttributes() {
+        ItemsService.ItemsPage page = new ItemsService.ItemsPage(
                 List.of(List.of(dto(1, 0), dto(2, 1), ItemDto.placeholder())),
                 new Paging(5, 1, false, true),
-                "",              // safeSearch
-                "NO"             // sort
+                "",
+                "NO"
         );
-        when(itemsService.getItemsPage(any(), any(), anyInt(), anyInt())).thenReturn(page);
 
-        mockMvc.perform(get("/items"))
-                .andExpect(status().isOk())
-                .andExpect(view().name("items"))
-                .andExpect(model().attributeExists("items", "search", "sort", "paging"))
-                .andExpect(model().attribute("search", equalTo("")))
-                .andExpect(model().attribute("sort", equalTo("NO")));
+        when(itemsService.getItemsPage(any(), any(), anyInt(), anyInt()))
+                .thenReturn(reactor.core.publisher.Mono.just(page));
+
+        webTestClient.get()
+                .uri("/items")
+                .exchange()
+                .expectStatus().isOk()
+                .expectHeader().contentTypeCompatibleWith("text/html");
 
         // Проверяем, что контроллер передал дефолты pageNumber/pageSize = 1/5 и sort=NO
         ArgumentCaptor<String> searchCap = ArgumentCaptor.forClass(String.class);
@@ -85,88 +82,104 @@ class ItemsControllerTest {
         assertThat(sortCap.getValue(), equalTo(ItemsSort.NO));
         assertThat(pageNumberCap.getValue(), equalTo(1));
         assertThat(pageSizeCap.getValue(), equalTo(5));
+
+        verifyNoInteractions(cartService);
     }
 
     @Test
-    void getItems_withParams_passesThemToService_andRendersItems() throws Exception {
-        var page = new ItemsService.ItemsPage(
+    void getItems_withParams_passesThemToService_andRendersItems() {
+        ItemsService.ItemsPage page = new ItemsService.ItemsPage(
                 List.of(List.of(dto(1, 0), dto(2, 0), dto(3, 0))),
                 new Paging(10, 2, true, true),
                 "coffee",
                 "PRICE"
         );
-        when(itemsService.getItemsPage(any(), any(), anyInt(), anyInt())).thenReturn(page);
 
-        mockMvc.perform(get("/items")
-                        .param("search", " coffee ")
-                        .param("sort", "PRICE")
-                        .param("pageNumber", "2")
-                        .param("pageSize", "10"))
-                .andExpect(status().isOk())
-                .andExpect(view().name("items"))
-                .andExpect(model().attribute("search", equalTo("coffee")))
-                .andExpect(model().attribute("sort", equalTo("PRICE")))
-                .andExpect(model().attributeExists("items", "paging"));
+        when(itemsService.getItemsPage(any(), any(), anyInt(), anyInt()))
+                .thenReturn(reactor.core.publisher.Mono.just(page));
 
-        verify(itemsService).getItemsPage(eq(" coffee "), eq(ItemsSort.PRICE), eq(2), eq(10));
-    }
+        webTestClient.get()
+                .uri(uriBuilder -> uriBuilder
+                        .path("/items")
+                        .queryParam("search", " coffee ")
+                        .queryParam("sort", "PRICE")
+                        .queryParam("pageNumber", "2")
+                        .queryParam("pageSize", "10")
+                        .build())
+                .exchange()
+                .expectStatus().isOk()
+                .expectHeader().contentTypeCompatibleWith("text/html");
 
-    @Test
-    void postItems_changesQuantity_andRedirectsPreservingParams() throws Exception {
-        mockMvc.perform(post("/items")
-                        .param("id", "5")
-                        .param("action", "PLUS")
-                        .param("search", "q")
-                        .param("sort", "ALPHA")
-                        .param("pageNumber", "3")
-                        .param("pageSize", "20"))
-                .andExpect(status().is3xxRedirection())
-                .andExpect(redirectedUrl("/items?search=q&sort=ALPHA&pageNumber=3&pageSize=20"));
+        verify(itemsService, times(1)).getItemsPage(
+                org.mockito.ArgumentMatchers.eq(" coffee "),
+                org.mockito.ArgumentMatchers.eq(ItemsSort.PRICE),
+                org.mockito.ArgumentMatchers.eq(2),
+                org.mockito.ArgumentMatchers.eq(10)
+        );
 
-        verify(cartService).apply(5L, CartAction.PLUS);
-        // itemsService тут не должен дергаться
-        verifyNoInteractions(itemsService);
-    }
-
-    @Test
-    void postItems_whenPageNumberOrPageSizeMissing_setsDefaultsInRedirect() throws Exception {
-        mockMvc.perform(post("/items")
-                        .param("id", "7")
-                        .param("action", "MINUS")
-                        .param("search", "q")
-                        .param("sort", "NO"))
-                .andExpect(status().is3xxRedirection())
-                // default pageNumber=1, pageSize=5
-                .andExpect(redirectedUrl("/items?search=q&sort=NO&pageNumber=1&pageSize=5"));
-
-        verify(cartService).apply(7L, CartAction.MINUS);
-    }
-
-    @Test
-    void getItem_rendersItemView_andAddsItemToModel() throws Exception {
-        when(itemsService.getItem(10L)).thenReturn(dto(10, 0));
-
-        mockMvc.perform(get("/items/10"))
-                .andExpect(status().isOk())
-                .andExpect(view().name("item"))
-                .andExpect(model().attributeExists("item"))
-                .andExpect(model().attribute("item", notNullValue()));
-
-        verify(itemsService).getItem(10L);
         verifyNoInteractions(cartService);
     }
 
     @Test
-    void postItem_changesQuantity_andRendersItemView_withUpdatedCount() throws Exception {
-        when(itemsService.getItemPage(10L)).thenReturn(dto(10, 3));
+    void postItems_changesQuantity_andRedirectsPreservingParams() {
+        when(cartService.apply(5L, CartAction.PLUS)).thenReturn(reactor.core.publisher.Mono.empty());
 
-        mockMvc.perform(post("/items/10")
-                        .param("action", "PLUS"))
-                .andExpect(status().isOk())
-                .andExpect(view().name("item"))
-                .andExpect(model().attributeExists("item"));
+        webTestClient.post()
+                .uri("/items")
+                .bodyValue("id=5&action=PLUS&search=q&sort=ALPHA&pageNumber=3&pageSize=20")
+                .header("Content-Type", "application/x-www-form-urlencoded")
+                .exchange()
+                .expectStatus().is3xxRedirection()
+                .expectHeader().valueEquals("Location", "/items?search=q&sort=ALPHA&pageNumber=3&pageSize=20");
 
-        verify(cartService).apply(10L, CartAction.PLUS);
-        verify(itemsService).getItemPage(10L);
+        verify(cartService, times(1)).apply(5L, CartAction.PLUS);
+        verifyNoInteractions(itemsService);
+    }
+
+    @Test
+    void postItems_whenPageNumberOrPageSizeMissing_setsDefaultsInRedirect() {
+        when(cartService.apply(7L, CartAction.MINUS)).thenReturn(reactor.core.publisher.Mono.empty());
+
+        webTestClient.post()
+                .uri("/items")
+                .bodyValue("id=7&action=MINUS&search=q&sort=NO")
+                .header("Content-Type", "application/x-www-form-urlencoded")
+                .exchange()
+                .expectStatus().is3xxRedirection()
+                .expectHeader().valueEquals("Location", "/items?search=q&sort=NO&pageNumber=1&pageSize=5");
+
+        verify(cartService, times(1)).apply(7L, CartAction.MINUS);
+        verifyNoInteractions(itemsService);
+    }
+
+    @Test
+    void getItem_rendersItemView_andAddsItemToModel() {
+        when(itemsService.getItem(10L)).thenReturn(reactor.core.publisher.Mono.just(dto(10, 0)));
+
+        webTestClient.get()
+                .uri("/items/10")
+                .exchange()
+                .expectStatus().isOk()
+                .expectHeader().contentTypeCompatibleWith("text/html");
+
+        verify(itemsService, times(1)).getItem(10L);
+        verifyNoInteractions(cartService);
+    }
+
+    @Test
+    void postItem_changesQuantity_andRendersItemView_withUpdatedCount() {
+        when(cartService.apply(10L, CartAction.PLUS)).thenReturn(reactor.core.publisher.Mono.empty());
+        when(itemsService.getItemPage(10L)).thenReturn(reactor.core.publisher.Mono.just(dto(10, 3)));
+
+        webTestClient.post()
+                .uri("/items/10")
+                .bodyValue("action=PLUS")
+                .header("Content-Type", "application/x-www-form-urlencoded")
+                .exchange()
+                .expectStatus().isOk()
+                .expectHeader().contentTypeCompatibleWith("text/html");
+
+        verify(cartService, times(1)).apply(10L, CartAction.PLUS);
+        verify(itemsService, times(1)).getItemPage(10L);
     }
 }

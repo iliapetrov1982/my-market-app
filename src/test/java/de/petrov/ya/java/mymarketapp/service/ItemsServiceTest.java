@@ -3,9 +3,8 @@ package de.petrov.ya.java.mymarketapp.service;
 import de.petrov.ya.java.mymarketapp.dto.page.ItemDto;
 import de.petrov.ya.java.mymarketapp.dto.page.ItemsSort;
 import de.petrov.ya.java.mymarketapp.dto.page.Paging;
-import de.petrov.ya.java.mymarketapp.repository.ItemRepository;
-import jakarta.persistence.EntityNotFoundException;
-import org.junit.jupiter.api.Assertions;
+import de.petrov.ya.java.mymarketapp.exception.EntityNotFoundException;
+import de.petrov.ya.java.mymarketapp.repository.ItemQueryRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -13,42 +12,31 @@ import org.mockito.Captor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageImpl;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Pageable;
-import org.springframework.data.domain.Sort;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
+import reactor.test.StepVerifier;
 
 import java.util.List;
-import java.util.Objects;
-import java.util.Optional;
 
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.containsString;
-import static org.hamcrest.Matchers.equalTo;
-import static org.hamcrest.Matchers.is;
-import static org.hamcrest.Matchers.notNullValue;
-
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.ArgumentMatchers.isNull;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
-
+import static org.hamcrest.Matchers.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class ItemsServiceTest {
 
     @Mock
-    ItemRepository itemRepository;
+    ItemQueryRepository itemQueryRepository;
 
     @InjectMocks
     ItemsService itemsService;
 
     @Captor
-    ArgumentCaptor<Pageable> pageableCaptor;
+    ArgumentCaptor<Integer> limitCaptor;
+
+    @Captor
+    ArgumentCaptor<Integer> offsetCaptor;
 
     private static ItemDto dto(long id, String title, long price, int count) {
         return new ItemDto(id, title, "desc-" + id, "/images/" + id + ".png", price, count);
@@ -59,7 +47,7 @@ class ItemsServiceTest {
         // Arrange:
         // pageSize invalid -> default 5
         // pageNumber <= 0 -> 1
-        // search trimmed + blank -> treated as null for repository call
+        // search blank -> "" in SQL-layer
         var content = List.of(
                 dto(1, "A", 100, 0),
                 dto(2, "B", 200, 0),
@@ -67,163 +55,170 @@ class ItemsServiceTest {
                 dto(4, "D", 400, 0) // 4 items => rows: [A,B,C], [D,placeholder,placeholder]
         );
 
-        when(itemRepository.findShowcase(isNull(), any(Pageable.class)))
-                .thenReturn(new PageImpl<>(content, Page.empty().getPageable(), 4));
+        when(itemQueryRepository.findShowcase(eq(""), eq(ItemsSort.NO), anyInt(), anyInt()))
+                .thenReturn(Flux.fromIterable(content));
+        when(itemQueryRepository.countShowcase(eq("")))
+                .thenReturn(Mono.just(4L));
 
-        // Act
-        var page = itemsService.getItemsPage("   ", ItemsSort.NO, 0, 999);
+        // Act + Assert
+        StepVerifier.create(itemsService.getItemsPage("   ", ItemsSort.NO, 0, 999))
+                .assertNext(page -> {
+                    // repo params: limit/offset
+                    verify(itemQueryRepository).findShowcase(eq(""), eq(ItemsSort.NO), limitCaptor.capture(), offsetCaptor.capture());
+                    assertThat(limitCaptor.getValue(), equalTo(5));
+                    assertThat(offsetCaptor.getValue(), equalTo(0));
 
-        // Assert: repository called with q = null (blank -> null)
-        verify(itemRepository, times(1)).findShowcase(isNull(), pageableCaptor.capture());
+                    // items -> rows of 3 with placeholders
+                    assertThat(page.items().size(), equalTo(2));
 
-        Pageable used = pageableCaptor.getValue();
-        assertThat(used.getPageNumber(), equalTo(0)); // safePageNumber=1 => 0-based = 0
-        assertThat(used.getPageSize(), equalTo(5));   // normalized to default 5
+                    assertThat(page.items().get(0).get(0).id(), equalTo(1L));
+                    assertThat(page.items().get(0).get(1).id(), equalTo(2L));
+                    assertThat(page.items().get(0).get(2).id(), equalTo(3L));
 
-        Sort sort = used.getSort();
-        assertThat(sort.getOrderFor("id"), notNullValue());
-        assertThat(Objects.requireNonNull(sort.getOrderFor("id")).getDirection(), equalTo(Sort.Direction.ASC));
+                    assertThat(page.items().get(1).get(0).id(), equalTo(4L));
+                    assertThat(page.items().get(1).get(1).id(), equalTo(-1L));
+                    assertThat(page.items().get(1).get(2).id(), equalTo(-1L));
 
-        // items -> rows of 3 with placeholders
-        assertThat(page.items().size(), equalTo(2));
+                    // paging + echo fields
+                    Paging paging = page.paging();
+                    assertThat(paging.pageSize(), equalTo(5));
+                    assertThat(paging.pageNumber(), equalTo(1));
+                    assertThat(paging.hasPrevious(), is(false));
+                    assertThat(paging.hasNext(), is(false)); // total=4 with pageSize=5 -> single page
 
-        // first row: 3 real items
-        assertThat(page.items().getFirst().getFirst().id(), equalTo(1L));
-        assertThat(page.items().get(0).get(1).id(), equalTo(2L));
-        assertThat(page.items().get(0).get(2).id(), equalTo(3L));
+                    assertThat(page.search(), equalTo(""));          // safeSearch
+                    assertThat(page.sort(), equalTo(ItemsSort.NO.name()));
+                })
+                .verifyComplete();
 
-        // second row: 1 real + 2 placeholders
-        assertThat(page.items().get(1).get(0).id(), equalTo(4L));
-        assertThat(page.items().get(1).get(1).id(), equalTo(-1L));
-        assertThat(page.items().get(1).get(2).id(), equalTo(-1L));
-
-        // paging + echo fields
-        Paging paging = page.paging();
-        assertThat(paging.pageSize(), equalTo(5));
-        assertThat(paging.pageNumber(), equalTo(1));
-        assertThat(paging.hasPrevious(), is(false));
-        assertThat(paging.hasNext(), is(false)); // total=4 with pageSize=5 -> single page
-
-        assertThat(page.search(), equalTo(""));          // safeSearch is trimmed
-        assertThat(page.sort(), equalTo(ItemsSort.NO.name()));
+        verify(itemQueryRepository).countShowcase(eq(""));
+        verifyNoMoreInteractions(itemQueryRepository);
     }
 
     @Test
-    void getItemsPage_usesProperSort_ALPHA() {
-        when(itemRepository.findShowcase(any(), any(Pageable.class)))
-                .thenReturn(new PageImpl<>(List.of(dto(1, "A", 100, 0))));
+    void getItemsPage_passesSort_ALPHA_toSql() {
+        when(itemQueryRepository.findShowcase(eq("x"), eq(ItemsSort.ALPHA), anyInt(), anyInt()))
+                .thenReturn(Flux.just(dto(1, "A", 100, 0)));
+        when(itemQueryRepository.countShowcase(eq("x")))
+                .thenReturn(Mono.just(1L));
 
-        itemsService.getItemsPage("x", ItemsSort.ALPHA, 1, 5);
+        StepVerifier.create(itemsService.getItemsPage("x", ItemsSort.ALPHA, 1, 5))
+                .expectNextCount(1)
+                .verifyComplete();
 
-        verify(itemRepository).findShowcase(eq("x"), pageableCaptor.capture());
-        Pageable used = pageableCaptor.getValue();
-
-        assertThat(used.getSort().getOrderFor("title"), notNullValue());
-        assertThat(Objects.requireNonNull(used.getSort().getOrderFor("title")).getDirection(), equalTo(Sort.Direction.ASC));
-
-        assertThat(used.getSort().getOrderFor("id"), notNullValue());
-        assertThat(Objects.requireNonNull(used.getSort().getOrderFor("id")).getDirection(), equalTo(Sort.Direction.ASC));
+        verify(itemQueryRepository).findShowcase(eq("x"), eq(ItemsSort.ALPHA), eq(5), eq(0));
+        verify(itemQueryRepository).countShowcase(eq("x"));
+        verifyNoMoreInteractions(itemQueryRepository);
     }
 
     @Test
-    void getItemsPage_usesProperSort_PRICE() {
-        when(itemRepository.findShowcase(any(), any(Pageable.class)))
-                .thenReturn(new PageImpl<>(List.of(dto(1, "A", 100, 0))));
+    void getItemsPage_passesSort_PRICE_toSql() {
+        when(itemQueryRepository.findShowcase(eq("x"), eq(ItemsSort.PRICE), anyInt(), anyInt()))
+                .thenReturn(Flux.just(dto(1, "A", 100, 0)));
+        when(itemQueryRepository.countShowcase(eq("x")))
+                .thenReturn(Mono.just(1L));
 
-        itemsService.getItemsPage("x", ItemsSort.PRICE, 1, 5);
+        StepVerifier.create(itemsService.getItemsPage("x", ItemsSort.PRICE, 1, 5))
+                .expectNextCount(1)
+                .verifyComplete();
 
-        verify(itemRepository).findShowcase(eq("x"), pageableCaptor.capture());
-        Pageable used = pageableCaptor.getValue();
-
-        assertThat(used.getSort().getOrderFor("price"), notNullValue());
-        assertThat(Objects.requireNonNull(used.getSort().getOrderFor("price")).getDirection(), equalTo(Sort.Direction.ASC));
-
-        assertThat(used.getSort().getOrderFor("id"), notNullValue());
-        assertThat(Objects.requireNonNull(used.getSort().getOrderFor("id")).getDirection(), equalTo(Sort.Direction.ASC));
+        verify(itemQueryRepository).findShowcase(eq("x"), eq(ItemsSort.PRICE), eq(5), eq(0));
+        verify(itemQueryRepository).countShowcase(eq("x"));
+        verifyNoMoreInteractions(itemQueryRepository);
     }
 
     @Test
     void getItemsPage_whenRequestedPageBeyondTotal_returnsLastPage() {
-        // 1) первый ответ репозитория: принудительно говорим "totalPages=3"
-        @SuppressWarnings("unchecked")
-        Page<ItemDto> firstCallPage = (Page<ItemDto>) mock(Page.class);
-        when(firstCallPage.getTotalPages()).thenReturn(3);
+        // pageSize=5, total=12 => totalPages=3.
+        // requested pageNumber=99 => reload lastPage=3 (0-based=2) => offset=10
 
-        // 2) второй ответ: настоящая последняя страница (контент важен)
-        var lastCallPage = new PageImpl<>(
-                List.of(dto(11, "L1", 1100, 0), dto(12, "L2", 1200, 0)),
-                PageRequest.of(2, 5),
-                12
-        );
+        // 1) first load: any data (может быть пусто) + total=12
+        when(itemQueryRepository.findShowcase(eq("q"), eq(ItemsSort.NO), anyInt(), anyInt()))
+                .thenReturn(Flux.empty()) // first call
+                .thenReturn(Flux.just(dto(11, "L1", 1100, 0), dto(12, "L2", 1200, 0))); // second call (last page)
 
-        when(itemRepository.findShowcase(eq("q"), any(Pageable.class)))
-                .thenReturn(firstCallPage)
-                .thenReturn(lastCallPage);
+        when(itemQueryRepository.countShowcase(eq("q")))
+                .thenReturn(Mono.just(12L)); // will be subscribed twice
 
-        // Act
-        var result = itemsService.getItemsPage("q", ItemsSort.NO, 99, 5);
+        StepVerifier.create(itemsService.getItemsPage("q", ItemsSort.NO, 99, 5))
+                .assertNext(page -> {
+                    assertThat(page.paging().pageNumber(), equalTo(3)); // last page number in UI (1-based)
 
-        // Assert: было 2 вызова
-        verify(itemRepository, times(2)).findShowcase(eq("q"), pageableCaptor.capture());
+                    // last page content we returned:
+                    assertThat(page.items().get(0).get(0).id(), equalTo(11L));
+                    assertThat(page.items().get(0).get(1).id(), equalTo(12L));
+                })
+                .verifyComplete();
 
-        var used = pageableCaptor.getAllValues();
-        assertThat(used.get(0).getPageNumber(), equalTo(98)); // 99-1
-        assertThat(used.get(1).getPageNumber(), equalTo(2));  // last page: 3-1
+        // Verify offsets of both calls:
+        ArgumentCaptor<Integer> offset = ArgumentCaptor.forClass(Integer.class);
+        verify(itemQueryRepository, times(2)).findShowcase(eq("q"), eq(ItemsSort.NO), eq(5), offset.capture());
+        assertThat(offset.getAllValues().get(0), equalTo(490)); // (99-1)*5
+        assertThat(offset.getAllValues().get(1), equalTo(10));  // (3-1)*5
 
-        assertThat(result.paging().pageNumber(), equalTo(3));
-        assertThat(result.items().get(0).get(0).id(), equalTo(11L));
-        assertThat(result.items().get(0).get(1).id(), equalTo(12L));
+        verify(itemQueryRepository, times(2)).countShowcase(eq("q"));
+        verifyNoMoreInteractions(itemQueryRepository);
     }
 
-
     @Test
-    void getItem_returnsDto_whenPresent() {
+    void getItem_emitsDto_whenPresent() {
         ItemDto dto = dto(10, "OK", 1000, 0);
-        when(itemRepository.findItemPage(10L)).thenReturn(Optional.of(dto));
+        when(itemQueryRepository.findItemPage(10L)).thenReturn(Mono.just(dto));
 
-        ItemDto result = itemsService.getItem(10L);
+        StepVerifier.create(itemsService.getItem(10L))
+                .assertNext(it -> {
+                    assertThat(it.id(), equalTo(10L));
+                    assertThat(it.title(), equalTo("OK"));
+                })
+                .verifyComplete();
 
-        assertThat(result, notNullValue());
-        assertThat(result.id(), equalTo(10L));
-        verify(itemRepository).findItemPage(10L);
+        verify(itemQueryRepository).findItemPage(10L);
+        verifyNoMoreInteractions(itemQueryRepository);
     }
 
     @Test
-    void getItem_throwsIllegalArgumentException_whenNotFound() {
-        when(itemRepository.findItemPage(404L)).thenReturn(Optional.empty());
+    void getItem_emitsIllegalArgumentException_whenNotFound() {
+        when(itemQueryRepository.findItemPage(404L)).thenReturn(Mono.empty());
 
-        assertThat(
-                "Должно быть выброшено IllegalArgumentException при отсутствии item",
-                org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,
-                        () -> itemsService.getItem(404L)
-                ).getMessage(),
-                containsString("Item not found: 404")
-        );
+        StepVerifier.create(itemsService.getItem(404L))
+                .expectErrorSatisfies(ex -> {
+                    assertThat(ex, instanceOf(IllegalArgumentException.class));
+                    assertThat(ex.getMessage(), containsString("Item not found: 404"));
+                })
+                .verify();
+
+        verify(itemQueryRepository).findItemPage(404L);
+        verifyNoMoreInteractions(itemQueryRepository);
     }
 
     @Test
-    void getItemPage_returnsDto_whenRepositoryReturnsNonNull() {
+    void getItemPage_emitsDto_whenPresent() {
         ItemDto dto = dto(7, "X", 700, 2);
-        when(itemRepository.findItemPage(7L)).thenReturn(Optional.of(dto));
+        when(itemQueryRepository.findItemPage(7L)).thenReturn(Mono.just(dto));
 
-        ItemDto result = itemsService.getItemPage(7L);
+        StepVerifier.create(itemsService.getItemPage(7L))
+                .assertNext(it -> {
+                    assertThat(it.id(), equalTo(7L));
+                    assertThat(it.count(), equalTo(2));
+                })
+                .verifyComplete();
 
-        assertThat(result.id(), equalTo(7L));
-        assertThat(result.count(), equalTo(2));
-        verify(itemRepository).findItemPage(7L);
+        verify(itemQueryRepository).findItemPage(7L);
+        verifyNoMoreInteractions(itemQueryRepository);
     }
 
     @Test
-    void getItemPage_throwsEntityNotFoundException_whenRepositoryReturnsEmptyOptional() {
-        when(itemRepository.findItemPage(999L))
-                .thenReturn(Optional.empty());
+    void getItemPage_emitsEntityNotFoundException_whenNotFound() {
+        when(itemQueryRepository.findItemPage(999L)).thenReturn(Mono.empty());
 
-        var ex = Assertions.assertThrows(
-                EntityNotFoundException.class,
-                () -> itemsService.getItemPage(999L)
-        );
+        StepVerifier.create(itemsService.getItemPage(999L))
+                .expectErrorSatisfies(ex -> {
+                    assertThat(ex, instanceOf(EntityNotFoundException.class));
+                    assertThat(ex.getMessage(), containsString("Item not found: 999"));
+                })
+                .verify();
 
-        assertThat(ex.getMessage(), containsString("Item not found: 999"));
+        verify(itemQueryRepository).findItemPage(999L);
+        verifyNoMoreInteractions(itemQueryRepository);
     }
-
 }

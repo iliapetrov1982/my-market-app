@@ -1,15 +1,5 @@
 package de.petrov.ya.java.mymarketapp.entity.order;
 
-import de.petrov.ya.java.mymarketapp.entity.Item;
-import jakarta.persistence.Column;
-import jakarta.persistence.EmbeddedId;
-import jakarta.persistence.Entity;
-import jakarta.persistence.FetchType;
-import jakarta.persistence.JoinColumn;
-import jakarta.persistence.ManyToOne;
-import jakarta.persistence.MapsId;
-import jakarta.persistence.Table;
-
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -17,35 +7,70 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 import lombok.ToString;
 
-@Entity
+import org.springframework.data.annotation.Id;
+import org.springframework.data.annotation.PersistenceCreator;
+import org.springframework.data.annotation.Transient;
+import org.springframework.data.domain.Persistable;
+import org.springframework.data.relational.core.mapping.Table;
+import org.springframework.data.relational.core.mapping.Column;
+
 @Table(name = "order_items")
 @Setter
 @Getter
 @ToString(onlyExplicitlyIncluded = true)
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 @NoArgsConstructor
-public class OrderItem {
+public class OrderItem implements Persistable<OrderItemId> {
 
-    @EmbeddedId
+    @Id
     private OrderItemId id;
 
-    @MapsId("orderId")
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "order_id", nullable = false)
-    private Order order;
-
-    @MapsId("itemId")
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "item_id", nullable = false)
-    private Item item;
-
-    // snapshot-поля (обязательные)
-    @Column(name = "title", nullable = false, length = 255)
+    @Column("title")
     private String title;
 
-    @Column(name = "price", nullable = false)
+    @Column("price")
     private Long price;
 
-    @Column(name = "quantity", nullable = false)
+    @Column("quantity")
     private Integer quantity;
+
+    @Transient
+    private boolean isNew = false;
+
+    // этот конструктор используется при чтении из БД -> сущность НЕ новая
+    @PersistenceCreator
+    public OrderItem(OrderItemId id, String title, Long price, Integer quantity) {
+        this.id = id;
+        this.title = title;
+        this.price = price;
+        this.quantity = quantity;
+        this.isNew = false;
+    }
+
+    // этот конструктор ты используешь при создании -> сущность НОВАЯ
+    public OrderItem(Long orderId, Long itemId, String title, Long price, Integer quantity) {
+        this.id = new OrderItemId(orderId, itemId);
+        this.title = title;
+        this.price = price;
+        this.quantity = quantity;
+        this.isNew = true;
+    }
+
+    @Override
+    public OrderItemId getId() {
+        return id;
+    }
+
+    @Override
+    public boolean isNew() {
+        return isNew;
+    }
+
+    public Long getOrderId() {
+        return id == null ? null : id.getOrderId();
+    }
+
+    public Long getItemId() {
+        return id == null ? null : id.getItemId();
+    }
 }

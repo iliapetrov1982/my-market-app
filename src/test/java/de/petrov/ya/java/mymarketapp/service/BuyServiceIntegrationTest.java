@@ -7,59 +7,82 @@ import de.petrov.ya.java.mymarketapp.entity.order.Order;
 import de.petrov.ya.java.mymarketapp.entity.order.OrderItem;
 import de.petrov.ya.java.mymarketapp.repository.CartItemRepository;
 import de.petrov.ya.java.mymarketapp.repository.ItemRepository;
+import de.petrov.ya.java.mymarketapp.repository.OrderItemRepository;
 import de.petrov.ya.java.mymarketapp.repository.OrderRepository;
+import java.util.Comparator;
+import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.domain.PageRequest;
-
-import java.util.Comparator;
-import java.util.List;
+import org.springframework.r2dbc.core.DatabaseClient;
+import reactor.test.StepVerifier;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.is;
-import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.Matchers.not;
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.hamcrest.Matchers.notNullValue;
 
 class BuyServiceIntegrationTest extends MyMarketAppApplicationTests {
 
     @Autowired
-    BuyService buyService;
+    private BuyService buyService;
 
     @Autowired
-    ItemRepository itemRepository;
+    private ItemRepository itemRepository;
 
     @Autowired
-    CartItemRepository cartItemRepository;
+    private CartItemRepository cartItemRepository;
 
     @Autowired
-    OrderRepository orderRepository;
+    private OrderRepository orderRepository;
+
+    @Autowired
+    private OrderItemRepository orderItemRepository;
+
+    @Autowired
+    private DatabaseClient db;
 
     @BeforeEach
     void cleanState() {
-        // тесты не должны зависеть от порядка запуска
-        cartItemRepository.deleteAll();
-        // orders/order_items лучше чистить для изоляции
-        orderRepository.deleteAll();
+        // FK: order_items -> orders, поэтому сначала чистим order_items
+        db.sql("delete from order_items").then().block();
+        db.sql("delete from orders").then().block();
+        cartItemRepository.deleteAll().block();
     }
 
     @Test
     void buy_whenCartIsEmpty_throwsIllegalStateException_andNothingCreated() {
-        assertThat(cartItemRepository.count(), is(0L));
+        Long cartCount = cartItemRepository.count().block();
+        assertThat(cartCount, is(0L));
 
-        var ex = assertThrows(IllegalStateException.class, () -> buyService.buy());
-        assertThat(ex.getMessage(), equalTo("Cart is empty"));
+        StepVerifier.create(buyService.buy())
+                .expectErrorMatches(ex ->
+                        ex instanceof IllegalStateException
+                        && "Cart is empty".equals(ex.getMessage())
+                )
+                .verify();
 
-        assertThat("Заказ не должен создаваться", orderRepository.count(), is(0L));
+        Long ordersCount = orderRepository.count().block();
+        assertThat("Заказ не должен создаваться", ordersCount, is(0L));
+
+        Long orderItemsCount = db.sql("select count(*) as c from order_items")
+                .map((row, meta) -> row.get("c", Long.class))
+                .one()
+                .block();
+        assertThat("Позиции заказа не должны создаваться", orderItemsCount, is(0L));
     }
 
     @Test
     void buy_whenCartHasItems_createsOrderAndOrderItems_clearsCart_totalSumIsCorrect() {
         // arrange: берём 2 товара из seed
-        List<Item> items = itemRepository.findAll(PageRequest.of(0, 2)).getContent();
-        assertThat("Seed должен содержать хотя бы 2 товара", items.size(), is(2));
+        List<Item> items = itemRepository.findAll()
+                .take(2)
+                .collectList()
+                .block();
+
+        assertThat("Seed должен содержать хотя бы 2 товара", items, notNullValue());
+        assertThat(items.size(), is(2));
 
         Item i1 = items.get(0);
         Item i2 = items.get(1);
@@ -67,53 +90,59 @@ class BuyServiceIntegrationTest extends MyMarketAppApplicationTests {
         int q1 = 2;
         int q2 = 3;
 
+        // ВАЖНО: CartItem implements Persistable, и обычный new CartItem(...) имеет isNew=false,
+        // поэтому Spring Data делает UPDATE вместо INSERT.
         cartItemRepository.saveAll(List.of(
-                new CartItem(i1, q1),
-                new CartItem(i2, q2)
-        ));
+                CartItem.newRow(i1.getId(), q1),
+                CartItem.newRow(i2.getId(), q2)
+        )).then().block();
 
-        assertThat("Корзина должна быть заполнена перед покупкой", cartItemRepository.count(), is(2L));
+        Long cartBefore = cartItemRepository.count().block();
+        assertThat("Корзина должна быть заполнена перед покупкой", cartBefore, is(2L));
 
         long expectedTotal = i1.getPrice() * (long) q1 + i2.getPrice() * (long) q2;
 
         // act
-        long orderId = buyService.buy();
+        Long orderId = buyService.buy().block();
+        assertThat(orderId, notNullValue());
 
         // assert: корзина очищена
-        assertThat("После buy() корзина должна быть очищена", cartItemRepository.count(), is(0L));
+        Long cartAfter = cartItemRepository.count().block();
+        assertThat("После buy() корзина должна быть очищена", cartAfter, is(0L));
 
         // assert: заказ существует
-        Order order = orderRepository.findByIdWithItems(orderId)
-                .orElseThrow(() -> new AssertionError("Order not found by id: " + orderId));
-
+        Order order = orderRepository.findById(orderId).block();
+        assertThat(order, notNullValue());
         assertThat(order.getId(), equalTo(orderId));
         assertThat(order.getCreatedAt(), notNullValue());
         assertThat(order.getTotalSum(), equalTo(expectedTotal));
 
-        // assert: позиции заказа
-        assertThat(order.getItems(), notNullValue());
-        assertThat("Должно быть 2 позиции заказа", order.getItems().size(), is(2));
+        // assert: позиции заказа (через кастомный репозиторий)
+        List<OrderItem> orderItems = orderItemRepository.findAllByOrderId(orderId)
+                .collectList()
+                .block();
 
-        // стабильнее сравнивать в отсортированном виде
-        List<OrderItem> orderItems = order.getItems().stream()
-                .sorted(Comparator.comparing(oi -> oi.getItem().getId()))
+        assertThat(orderItems, notNullValue());
+        assertThat("Должно быть 2 позиции заказа", orderItems.size(), is(2));
+
+        // стабильность: сортируем по itemId
+        List<OrderItem> sorted = orderItems.stream()
+                .sorted(Comparator.comparing(OrderItem::getItemId))
                 .toList();
 
-        // для item 1
-        OrderItem oi1 = orderItems.stream()
-                .filter(oi -> oi.getItem().getId().equals(i1.getId()))
+        OrderItem oi1 = sorted.stream()
+                .filter(oi -> oi.getItemId().equals(i1.getId()))
                 .findFirst()
                 .orElseThrow(() -> new AssertionError("OrderItem for item " + i1.getId() + " not found"));
 
         assertThat(oi1.getTitle(), equalTo(i1.getTitle()));
         assertThat(oi1.getPrice(), equalTo(i1.getPrice()));
         assertThat(oi1.getQuantity(), equalTo(q1));
-        assertThat("PK(orderId,itemId) должен содержать orderId", oi1.getId().getOrderId(), equalTo(orderId));
-        assertThat("PK(orderId,itemId) должен содержать itemId", oi1.getId().getItemId(), equalTo(i1.getId()));
+        assertThat(oi1.getId().getOrderId(), equalTo(orderId));
+        assertThat(oi1.getId().getItemId(), equalTo(i1.getId()));
 
-        // для item 2
-        OrderItem oi2 = orderItems.stream()
-                .filter(oi -> oi.getItem().getId().equals(i2.getId()))
+        OrderItem oi2 = sorted.stream()
+                .filter(oi -> oi.getItemId().equals(i2.getId()))
                 .findFirst()
                 .orElseThrow(() -> new AssertionError("OrderItem for item " + i2.getId() + " not found"));
 
@@ -124,19 +153,34 @@ class BuyServiceIntegrationTest extends MyMarketAppApplicationTests {
         assertThat(oi2.getId().getItemId(), equalTo(i2.getId()));
     }
 
+
     @Test
     void buy_createsNewOrderEachTime() {
-        // arrange: один товар из seed
-        Item i = itemRepository.findAll(PageRequest.of(0, 1)).getContent().getFirst();
+        Item item = itemRepository.findAll()
+                .next()
+                .block();
+        assertThat(item, notNullValue());
 
-        cartItemRepository.save(new CartItem(i, 1));
-        long id1 = buyService.buy();
+        cartItemRepository.save(CartItem.newRow(item.getId(), 1)).block();
+        Long id1 = buyService.buy().block();
+        assertThat(id1, notNullValue());
 
-        cartItemRepository.save(new CartItem(i, 2));
-        long id2 = buyService.buy();
+        cartItemRepository.save(CartItem.newRow(item.getId(), 2)).block();
+        Long id2 = buyService.buy().block();
+        assertThat(id2, notNullValue());
 
         assertThat("Должны быть разные заказы", id2, not(equalTo(id1)));
-        assertThat("Должно быть 2 заказа", orderRepository.count(), is(2L));
-        assertThat("Корзина должна быть пуста", cartItemRepository.count(), is(0L));
+
+        Long ordersCount = orderRepository.count().block();
+        assertThat("Должно быть 2 заказа", ordersCount, is(2L));
+
+        Long cartCount = cartItemRepository.count().block();
+        assertThat("Корзина должна быть пуста", cartCount, is(0L));
+
+        Long orderItemsCount = db.sql("select count(*) as c from order_items")
+                .map((row, meta) -> row.get("c", Long.class))
+                .one()
+                .block();
+        assertThat("Должно быть 2 строки в order_items", orderItemsCount, is(2L));
     }
 }

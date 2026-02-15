@@ -8,7 +8,7 @@
 <body class="bg-light">
 <div class="container p-4">
     <div class="alert alert-danger">
-        <h4 class="alert-heading" th:text="${status} + ' ' + ${error}">404 Not Found</h4>
+        <h4 class="alert-heading" th:text="|${status} ${error}|">404 Not Found</h4>
         <p th:text="${message}">Something went wrong</p>
         <hr>
         <a href="/items" class="btn btn-secondary">Back to items</a>

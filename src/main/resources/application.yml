@@ -2,20 +2,26 @@ spring:
   application:
     name: my-market-app
 
+  main:
+    web-application-type: reactive
+
+  # --- Runtime DB access via R2DBC ---
+  r2dbc:
+    url: ${SPRING_R2DBC_URL:r2dbc:postgresql://localhost:5432/my-market-app}
+    username: ${SPRING_R2DBC_USERNAME:my_market_user}
+    password: ${SPRING_R2DBC_PASSWORD:my_market_pass}
+
   liquibase:
+    enabled: true
     change-log: classpath:/db/changelog/scripts/db.changelog-master.yaml
-
-  datasource:
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/my-market-app}
-    username: ${SPRING_DATASOURCE_USERNAME:my_market_user}
+    user: ${SPRING_DATASOURCE_USERNAME:my_market_user}
     password: ${SPRING_DATASOURCE_PASSWORD:my_market_pass}
-    driver-class-name: org.postgresql.Driver
 
-    jpa:
-      open-in-view: false
-      hibernate:
-        ddl-auto: validate
-      properties:
-        hibernate:
-          jdbc:
-            time_zone: UTC
+logging:
+  level:
+    liquibase: INFO
+    org.springframework.r2dbc: INFO
+    org.springframework.boot.context.properties: DEBUG
+    io.r2dbc.postgresql.QUERY: DEBUG
+    io.r2dbc.postgresql.PARAM: DEBUG

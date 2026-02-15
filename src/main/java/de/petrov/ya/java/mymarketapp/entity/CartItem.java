@@ -1,43 +1,51 @@
 package de.petrov.ya.java.mymarketapp.entity;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.FetchType;
-import jakarta.persistence.Id;
-import jakarta.persistence.JoinColumn;
-import jakarta.persistence.ManyToOne;
-import jakarta.persistence.MapsId;
-import jakarta.persistence.Table;
-
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import lombok.ToString;
 
-@Entity
-@Table(name = "cart_items")
+import org.springframework.data.annotation.Id;
+import org.springframework.data.annotation.Transient;
+import org.springframework.data.domain.Persistable;
+import org.springframework.data.relational.core.mapping.Table;
+import org.springframework.data.relational.core.mapping.Column;
 
+@Table(name = "cart_items")
 @Setter
 @Getter
 @ToString(onlyExplicitlyIncluded = true)
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-public class CartItem {
+public class CartItem implements Persistable<Long> {
     @Id
-    @Column(name = "item_id")
+    @Column("item_id")
     private Long itemId;
 
-    @MapsId
-    @JoinColumn(name = "item_id")
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    private Item item;
-
-    @Column(name = "quantity", nullable = false)
+    @Column("quantity")
     private int quantity;
 
-    public CartItem(Item item, int quantity) {
-        this.item = item;
-        this.itemId = item.getId();
+    @Transient
+    private boolean isNew = false;
+
+    public CartItem(Long item, int quantity) {
+        this.itemId = item;
         this.quantity = quantity;
+    }
+
+    public static CartItem newRow(long itemId, int quantity) {
+        CartItem ci = new CartItem(itemId, quantity);
+        ci.isNew = true;
+        return ci;
+    }
+
+    @Override
+    public Long getId() {
+        return itemId;
+    }
+
+    @Override
+    public boolean isNew() {
+        return isNew;
     }
 }

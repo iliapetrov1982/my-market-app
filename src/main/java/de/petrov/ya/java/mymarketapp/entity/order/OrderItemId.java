@@ -1,28 +1,25 @@
 package de.petrov.ya.java.mymarketapp.entity.order;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Embeddable;
-
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.springframework.data.relational.core.mapping.Column;
 
 import java.io.Serializable;
 import java.util.Objects;
 
-@Embeddable
 @Getter
 @Setter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor
 public class OrderItemId implements Serializable {
 
-    @Column(name = "order_id", nullable = false)
+    @Column("order_id")
     private Long orderId;
 
-    @Column(name = "item_id", nullable = false)
+    @Column("item_id")
     private Long itemId;
 
     @Override

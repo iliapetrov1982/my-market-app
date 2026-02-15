@@ -3,128 +3,178 @@ package de.petrov.ya.java.mymarketapp.service;
 import de.petrov.ya.java.mymarketapp.entity.CartItem;
 import de.petrov.ya.java.mymarketapp.entity.Item;
 import de.petrov.ya.java.mymarketapp.entity.order.Order;
+import de.petrov.ya.java.mymarketapp.entity.order.OrderItem;
 import de.petrov.ya.java.mymarketapp.repository.CartItemRepository;
+import de.petrov.ya.java.mymarketapp.repository.ItemRepository;
+import de.petrov.ya.java.mymarketapp.repository.OrderItemRepository;
 import de.petrov.ya.java.mymarketapp.repository.OrderRepository;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
-import org.mockito.Captor;
-import org.mockito.InjectMocks;
-import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.reactivestreams.Publisher;
+import org.springframework.transaction.reactive.TransactionalOperator;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
+import reactor.test.StepVerifier;
 
-import java.util.List;
+import java.time.OffsetDateTime;
 
-import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.*;
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyIterable;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class BuyServiceTest {
 
-    @Mock
-    CartItemRepository cartItemRepository;
+    private CartItemRepository cartItemRepository;
+    private ItemRepository itemRepository;
+    private OrderRepository orderRepository;
+    private OrderItemRepository orderItemRepository;
+    private TransactionalOperator tx;
 
-    @Mock
-    OrderRepository orderRepository;
+    private BuyService buyService;
 
-    @InjectMocks
-    BuyService buyService;
+    @BeforeEach
+    void setUp() {
+        cartItemRepository = mock(CartItemRepository.class);
+        itemRepository = mock(ItemRepository.class);
+        orderRepository = mock(OrderRepository.class);
+        orderItemRepository = mock(OrderItemRepository.class);
+        tx = mock(TransactionalOperator.class);
 
-    @Captor
-    ArgumentCaptor<Order> orderCaptor;
+        // buy() оборачивает Mono -> выбираем overload transactional(Mono)
+        when(tx.transactional(any(Mono.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
 
-    private static Item item(long id, String title, long price) {
-        var item = new Item(
-                title,
-                "desc-" + id,
-                "/images/" + id + ".png",
-                price
+        buyService = new BuyService(
+                cartItemRepository,
+                itemRepository,
+                orderRepository,
+                orderItemRepository,
+                tx
         );
-        item.setId(id);
-        return item;
-    }
-
-    private static CartItem cartItem(Item item, int qty) {
-        // НЕ МОКАЕМ entity. Создаём реальную.
-        CartItem ci = new CartItem(item, qty);
-
-        // важно при @MapsId/@Id=item_id
-        ci.setItemId(item.getId());
-
-        return ci;
     }
 
     @Test
-    void buy_whenCartIsEmpty_throwsIllegalStateException() {
-        when(cartItemRepository.findAll()).thenReturn(List.of());
+    void buy_whenCartIsEmpty_shouldFail_andNotTouchDb() {
+        when(cartItemRepository.findAll()).thenReturn(Flux.empty());
 
-        var ex = assertThrows(IllegalStateException.class, () -> buyService.buy());
-        assertThat(ex.getMessage(), equalTo("Cart is empty"));
+        StepVerifier.create(buyService.buy())
+                .expectErrorMatches(ex ->
+                        ex instanceof IllegalStateException
+                        && "Cart is empty".equals(ex.getMessage())
+                )
+                .verify();
 
         verify(cartItemRepository, times(1)).findAll();
-        verifyNoInteractions(orderRepository);
+        verify(itemRepository, never()).findAllById(anyIterable());
+        verify(orderRepository, never()).save(any(Order.class));
+        verify(orderItemRepository, never()).saveAll(any());
         verify(cartItemRepository, never()).deleteAll();
+        verify(tx, times(1)).transactional(any(Mono.class));
     }
 
     @Test
-    void buy_whenCartHasItems_createsOrder_calculatesTotalSum_clearsCart_returnsOrderId() {
-        Item cap = mockItem(1L, "Cap", 1499L);
-        Item mug = mockItem(2L, "Mug", 899L);
+    void buy_happyPath_shouldCreateOrderItems_updateTotal_clearCart_andReturnOrderId() {
+        // cart
+        CartItem ci1 = new CartItem(1L, 2); // 2 * 100
+        CartItem ci2 = new CartItem(2L, 1); // 1 * 50
+        when(cartItemRepository.findAll()).thenReturn(Flux.just(ci1, ci2));
 
-        CartItem capItem = new CartItem(cap, 2); // ← ВНЕ when
-        CartItem mugItem = new CartItem(mug, 3);
+        // items
+        Item item1 = new Item("Apple", "d1", "img1", 100L);
+        item1.setId(1L);
+        Item item2 = new Item("Banana", "d2", "img2", 50L);
+        item2.setId(2L);
 
-        when(cartItemRepository.findAll())
-                .thenReturn(List.of(capItem, mugItem));
+        when(itemRepository.findAllById(anyIterable()))
+                .thenReturn(Flux.just(item1, item2));
 
-        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> {
-            Order o = inv.getArgument(0);
-            o.setId(10L);
-            return o;
-        });
+        // capture orderItems passed to saveAll (reactive, no block)
+        java.util.List<OrderItem> capturedOrderItems = new java.util.concurrent.CopyOnWriteArrayList<>();
 
-        long orderId = buyService.buy();
+        doAnswer(inv -> {
+            @SuppressWarnings("unchecked")
+            Publisher<OrderItem> pub = (Publisher<OrderItem>) inv.getArgument(0);
 
-        assertThat(orderId, equalTo(10L));
+            return Flux.from(pub)
+                    .doOnNext(capturedOrderItems::add)
+                    .thenMany(Flux.empty());
+        }).when(orderItemRepository).saveAll(any());
 
-        verify(orderRepository).save(orderCaptor.capture());
-        Order saved = orderCaptor.getValue();
-
-        assertThat(saved.getId(), equalTo(10L));
-        assertThat(saved.getCreatedAt(), notNullValue());
-        assertThat(saved.getTotalSum(), equalTo(5695L)); // 2998 + 2697
-
-        verify(cartItemRepository).deleteAll();
-    }
-
-    private static Item mockItem(long id, String title, long price) {
-        Item item = mock(Item.class);
-        when(item.getId()).thenReturn(id);
-        when(item.getTitle()).thenReturn(title);
-        when(item.getPrice()).thenReturn(price);
-        return item;
-    }
-
-    @Test
-    void buy_setsInitialTotalSumZero_beforeRecalculation() {
-        Item it = item(1L, "One", 100L);
-
-        when(cartItemRepository.findAll()).thenReturn(List.of(cartItem(it, 1)));
+        // --- SNAPSHOT ORDERS AT EACH save() CALL (to avoid mutation problems) ---
+        record OrderSnapshot(Long id, OffsetDateTime createdAt, Long totalSum) {}
+        java.util.List<OrderSnapshot> snapshots = new java.util.concurrent.CopyOnWriteArrayList<>();
 
         when(orderRepository.save(any(Order.class))).thenAnswer(inv -> {
-            Order o = inv.getArgument(0);
-            // на момент save (до цикла) totalSum должен быть 0
-            assertThat(o.getTotalSum(), equalTo(0L));
-            o.setId(1L);
-            return o;
+            Order arg = inv.getArgument(0);
+
+            // snapshot BEFORE we mutate/return
+            snapshots.add(new OrderSnapshot(arg.getId(), arg.getCreatedAt(), arg.getTotalSum()));
+
+            // emulate DB behavior on first save
+            if (arg.getId() == null) {
+                arg.setId(42L);
+                arg.setCreatedAt(null); // to force updateTotal() to set it later
+            }
+
+            return Mono.just(arg);
         });
 
-        buyService.buy();
+        when(cartItemRepository.deleteAll()).thenReturn(Mono.empty());
 
-        verify(orderRepository, times(1)).save(any(Order.class));
+        // run
+        StepVerifier.create(buyService.buy())
+                .expectNext(42L)
+                .verifyComplete();
+
+        // assert orderItems
+        assertThat(capturedOrderItems).hasSize(2);
+
+        OrderItem oi1 = capturedOrderItems.stream()
+                .filter(oi -> Long.valueOf(1L).equals(oi.getItemId()))
+                .findFirst()
+                .orElseThrow();
+
+        assertThat(oi1.getOrderId()).isEqualTo(42L);
+        assertThat(oi1.getTitle()).isEqualTo("Apple");
+        assertThat(oi1.getPrice()).isEqualTo(100L);
+        assertThat(oi1.getQuantity()).isEqualTo(2);
+
+        OrderItem oi2 = capturedOrderItems.stream()
+                .filter(oi -> Long.valueOf(2L).equals(oi.getItemId()))
+                .findFirst()
+                .orElseThrow();
+
+        assertThat(oi2.getOrderId()).isEqualTo(42L);
+        assertThat(oi2.getTitle()).isEqualTo("Banana");
+        assertThat(oi2.getPrice()).isEqualTo(50L);
+        assertThat(oi2.getQuantity()).isEqualTo(1);
+
+        // assert save() snapshots
+        long expectedTotal = 100L * 2 + 50L * 1; // 250
+        assertThat(snapshots).hasSize(2);
+
+        OrderSnapshot first = snapshots.get(0);
+        OrderSnapshot second = snapshots.get(1);
+
+        // 1st save: create Order(0L)
+        assertThat(first.totalSum()).isEqualTo(0L);
+
+        // 2nd save: updated order with computed total
+        assertThat(second.id()).isEqualTo(42L);
+        assertThat(second.totalSum()).isEqualTo(expectedTotal);
+        assertThat(second.createdAt()).isNotNull();
+        assertThat(second.createdAt()).isBeforeOrEqualTo(OffsetDateTime.now());
+
+        // verify remaining interactions
+        verify(cartItemRepository, times(1)).findAll();
+        verify(itemRepository, times(1)).findAllById(anyIterable());
+        verify(orderItemRepository, times(1)).saveAll(any());
         verify(cartItemRepository, times(1)).deleteAll();
+        verify(tx, times(1)).transactional(any(Mono.class));
     }
+
 }

@@ -1,123 +1,109 @@
 package de.petrov.ya.java.mymarketapp.repository;
 
-import de.petrov.ya.java.mymarketapp.dto.page.ItemDto;
 import de.petrov.ya.java.mymarketapp.MyMarketAppApplicationTests;
-
-import org.junit.jupiter.api.Test;
-import org.springframework.data.domain.Sort;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.beans.factory.annotation.Autowired;
-
+import de.petrov.ya.java.mymarketapp.entity.Item;
 import java.util.List;
 import java.util.Objects;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import reactor.core.publisher.Flux;
 
-import static org.hamcrest.Matchers.is;
-import static org.hamcrest.Matchers.not;
-import static org.hamcrest.Matchers.empty;
-import static org.hamcrest.Matchers.equalTo;
-import static org.hamcrest.Matchers.startsWith;
-import static org.hamcrest.Matchers.greaterThan;
-import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.greaterThanOrEqualTo;
+import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.notNullValue;
+import static org.hamcrest.Matchers.startsWith;
 
 class ItemRepositoryTest extends MyMarketAppApplicationTests {
 
     @Autowired
-    ItemRepository itemRepository;
+    private ItemRepository itemRepository;
+
+    @Autowired
+    private CartItemRepository cartItemRepository;
+
+    @BeforeEach
+    void cleanCartOnly() {
+        // items — из seed, не трогаем
+        cartItemRepository.deleteAll().block();
+    }
 
     @Test
-    void findShowcase_returnsItemsFromSeed_withZeroCount() {
-        var page = itemRepository.findShowcase(
-                null,
-                PageRequest.of(0, 10, Sort.by("id").ascending())
-        );
+    void seed_hasAtLeast10Items_andFieldsAreValid() {
+        List<Item> items = itemRepository.findAll()
+                .collectList()
+                .block();
 
-        assertThat(page, notNullValue());
-        assertThat("В seed должно быть не меньше 10 товаров", page.getTotalElements(), greaterThanOrEqualTo(10L));
+        assertThat(items, notNullValue());
+        assertThat("В seed должно быть не меньше 10 товаров", items.size(), greaterThanOrEqualTo(10));
 
-        for (ItemDto dto : page.getContent()) {
-            assertThat(dto.id(), greaterThan(0L));
+        for (Item it : items) {
+            assertThat(it.getId(), notNullValue());
+            assertThat(it.getId(), greaterThanOrEqualTo(1L));
 
-            assertThat(dto.title(), notNullValue());
-            assertThat(dto.title(), not(equalTo("")));
+            assertThat(it.getTitle(), notNullValue());
+            assertThat(it.getDescription(), notNullValue());
+            assertThat(it.getImgPath(), notNullValue());
+            assertThat("imgPath должен начинаться с /images/", it.getImgPath(), startsWith("/images/"));
 
-            assertThat(dto.description(), notNullValue());
-            assertThat(dto.description(), not(equalTo("")));
+            assertThat(it.getPrice(), notNullValue());
+            assertThat(it.getPrice(), greaterThanOrEqualTo(0L));
 
-            assertThat(dto.imgPath(), notNullValue());
-            assertThat(dto.imgPath(), startsWith("/images/"));
-
-            assertThat(dto.price(), greaterThanOrEqualTo(0L));
-
-            assertThat(
-                    "Seed не содержит cart_items → count должен быть 0",
-                    dto.count(),
-                    equalTo(0)
-            );
+            // createdAt в БД default now(), а в entity может прийти — проверим что не null
+            assertThat(it.getCreatedAt(), notNullValue());
         }
     }
 
     @Test
-    void findShowcase_filtersByQuery_caseInsensitive() {
-        var result = itemRepository.findShowcase(
-                "coffee",
-                PageRequest.of(0, 20)
-        );
-
-        List<ItemDto> content = result.getContent();
-        assertThat(content, is(not(empty())));
-
-        boolean found = content.stream()
-                .map(ItemDto::title)
+    void seed_containsCoffeeItem_caseInsensitive_inMemory() {
+        // репозиторий не умеет query -> проверяем seed через фильтр в памяти
+        Boolean found = itemRepository.findAll()
+                .map(Item::getTitle)
                 .filter(Objects::nonNull)
                 .map(String::toLowerCase)
-                .anyMatch(t -> t.contains("coffee"));
+                .any(t -> t.contains("coffee"))
+                .block();
 
-        assertThat(
-                "Должен быть хотя бы один товар с 'coffee' в title (seed содержит Coffee items)",
-                found,
-                is(true)
-        );
+        assertThat("Seed должен содержать хотя бы один товар с 'coffee' в title", found, is(true));
     }
 
     @Test
-    void findItemPage_returnsOptionalPresent_forExistingItem() {
-        var firstItem = itemRepository.findAll(PageRequest.of(0, 1))
-                .getContent()
-                .getFirst();
+    void findById_returnsItem_forExistingItem() {
+        Item first = itemRepository.findAll()
+                .next()
+                .block();
+        assertThat(first, notNullValue());
+        assertThat(first.getId(), notNullValue());
 
-        var dtoOpt = itemRepository.findItemPage(firstItem.getId());
-
-        assertThat("findItemPage должен вернуть Optional.present для существующего id", dtoOpt.isPresent(), is(true));
-
-        var dto = dtoOpt.get();
-        assertThat(dto.id(), equalTo(firstItem.getId()));
-        assertThat("Товар не в корзине → count = 0", dto.count(), equalTo(0));
+        Item loaded = itemRepository.findById(first.getId()).block();
+        assertThat(loaded, notNullValue());
+        assertThat(loaded.getId(), is(first.getId()));
     }
 
     @Test
-    void findItemWithCount_returnsDto_forExistingItem() {
-        var firstItem = itemRepository.findAll(PageRequest.of(0, 1))
-                .getContent()
-                .getFirst();
+    void save_and_delete_roundtrip_works() {
+        Item created = new Item("Tmp", "Tmp desc", "/images/tmp.png", 123L);
 
-        ItemDto dto = itemRepository.findItemPage(firstItem.getId())
-                .orElseThrow(() -> new AssertionError("Item not found: " + firstItem.getId()));
+        Item saved = itemRepository.save(created).block();
+        assertThat(saved, notNullValue());
+        assertThat(saved.getId(), notNullValue());
 
-//        assertThat(dto, notNullValue());
-        assertThat(dto.id(), equalTo(firstItem.getId()));
-        assertThat("Товар не в корзине → count = 0", dto.count(), equalTo(0));
+        Long countAfterSave = itemRepository.count().block();
+        assertThat(countAfterSave, notNullValue());
+        assertThat(countAfterSave, greaterThanOrEqualTo(1L));
+
+        itemRepository.deleteById(saved.getId()).block();
+
+        Boolean exists = itemRepository.findById(saved.getId())
+                .hasElement()
+                .block();
+        assertThat(exists, is(false));
     }
 
     @Test
-    void findCartItems_returnsEmptyList_whenCartIsEmpty() {
-        List<ItemDto> cartItems = itemRepository.findCartItems();
-
-        assertThat(
-                "Seed не содержит cart_items → список должен быть пустым",
-                cartItems,
-                is(empty())
-        );
+    void cart_isEmpty_byDefault_inIntegrationContext() {
+        Long cartCount = cartItemRepository.count().block();
+        assertThat(cartCount, is(0L));
     }
 }

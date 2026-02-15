@@ -35,9 +35,14 @@ services:
 
     environment:
       TZ: Europe/Berlin
-
       SERVER_PORT: "8080"
 
+      # --- R2DBC (runtime) ---
+      SPRING_R2DBC_URL: r2dbc:postgresql://postgres:5432/my-market-app
+      SPRING_R2DBC_USERNAME: my_market_user
+      SPRING_R2DBC_PASSWORD: my_market_pass
+
+      # --- JDBC (Liquibase only) ---
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/my-market-app
       SPRING_DATASOURCE_USERNAME: my_market_user
       SPRING_DATASOURCE_PASSWORD: my_market_pass
