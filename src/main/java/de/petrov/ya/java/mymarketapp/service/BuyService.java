@@ -14,6 +14,10 @@ import org.springframework.transaction.reactive.TransactionalOperator;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+
 @Service
 @RequiredArgsConstructor
 public class BuyService {
@@ -21,7 +25,7 @@ public class BuyService {
     private final CartItemRepository cartItemRepository;
     private final ItemRepository itemRepository;
     private final OrderRepository orderRepository;
-    private final OrderItemRepository orderItemRepository; // новый
+    private final OrderItemRepository orderItemRepository;
     private final TransactionalOperator tx;
 
     public Mono<Long> buy() {
@@ -32,25 +36,34 @@ public class BuyService {
                         return Mono.error(new IllegalStateException("Cart is empty"));
                     }
 
-                    var itemIds = cartItems.stream().map(CartItem::getItemId).toList();
+                    var itemIds = cartItems.stream()
+                            .map(CartItem::getItemId)
+                            .toList();
 
                     return itemRepository.findAllById(itemIds)
-                            .collectMap(Item::getId)
-                            .flatMap(itemsMap -> {
+                            .collectList()
+                            .flatMap(items -> {
+                                Map<Long, Item> itemsMap = items.stream()
+                                        .collect(Collectors.toMap(Item::getId, Function.identity()));
 
-                                Order order = new Order(0L); // createdAt выставится в конструкторе
+                                // 1) считаем итог ДО сохранения order
+                                long totalSum = cartItems.stream()
+                                        .mapToLong(ci -> {
+                                            Item item = itemsMap.get(ci.getItemId());
+                                            if (item == null) {
+                                                // На всякий случай (если товар удалили/не найден)
+                                                throw new IllegalStateException("Item not found: " + ci.getItemId());
+                                            }
+                                            return item.getPrice() * (long) ci.getQuantity();
+                                        })
+                                        .sum();
+
+                                // 2) сохраняем order ОДИН раз уже с totalSum
+                                Order order = new Order(totalSum); // createdAt выставится в конструкторе
 
                                 return orderRepository.save(order)
                                         .flatMap(savedOrder -> {
-
                                             long orderId = savedOrder.getId();
-
-                                            long totalSum = cartItems.stream()
-                                                    .mapToLong(ci -> {
-                                                        Item item = itemsMap.get(ci.getItemId());
-                                                        return item.getPrice() * (long) ci.getQuantity();
-                                                    })
-                                                    .sum();
 
                                             Flux<OrderItem> orderItemsFlux = Flux.fromIterable(cartItems)
                                                     .map(ci -> {
@@ -64,21 +77,13 @@ public class BuyService {
                                                         );
                                                     });
 
+                                            // 3) сохраняем позиции заказа, чистим корзину, возвращаем id
                                             return orderItemRepository.saveAll(orderItemsFlux)
-                                                    .then(orderRepository.save(updateTotal(savedOrder, totalSum)))
                                                     .then(cartItemRepository.deleteAll())
                                                     .thenReturn(orderId);
                                         });
                             });
                 })
                 .as(tx::transactional);
-    }
-
-    private Order updateTotal(Order order, long total) {
-        order.setTotalSum(total);
-        if (order.getCreatedAt() == null) {
-            order.setCreatedAt(java.time.OffsetDateTime.now());
-        }
-        return order;
     }
 }

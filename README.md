@@ -1,185 +1,272 @@
-# 🛒 My Market App
+# 🛒 My Market App (Reactive, WebFlux + R2DBC)
 
-Реактивное Spring Boot приложение — витрина интернет-магазина с корзиной и заказами.
+Spring Boot приложение — витрина интернет-магазина с корзиной и заказами.
 
----
-
-## 🚀 Стек технологий
-
-Java 21  
-Spring Boot 4.x  
-Spring WebFlux (Reactive)  
-Spring Data R2DBC  
-Thymeleaf  
-PostgreSQL 16  
-R2DBC PostgreSQL Driver  
-Liquibase (schema + seed data)  
-Gradle  
-Docker / Docker Compose
-
-Тестирование:  
-JUnit 5  
-Mockito  
-Hamcrest  
-Reactor Test (StepVerifier)  
-Testcontainers
+Проект полностью переведён на **реактивный стек**:
+- Spring WebFlux (контроллеры возвращают `Mono<String>`)
+- Spring Data R2DBC (без JPA / JDBC)
+- PostgreSQL 16
+- Liquibase
+- TransactionalOperator для реактивных транзакций
+- Thymeleaf (server-side rendering)
 
 ---
 
-## ⚡ Реактивная архитектура
+# 🚀 Технологический стек
 
-Приложение полностью переведено на **реактивную модель (WebFlux + R2DBC)**.
+## Runtime
+- Java 21
+- Spring Boot 4.0.2
+- Spring WebFlux
+- Spring Data R2DBC
+- Thymeleaf
+- PostgreSQL 16
+- Liquibase
+- Gradle
 
-### Контроллеры
-- Возвращают `Mono<String>`
-- Используют `ServerWebExchange` для чтения form-data
-- POST-обработчики работают с `application/x-www-form-urlencoded`
-- Нет блокирующих вызовов (`.block()` запрещён)
-
-### Сервисы
-- Возвращают `Mono<T>` / `Flux<T>`
-- Используют реактивные репозитории
-- Транзакции реализованы через `TransactionalOperator`
-- Бизнес-логика полностью реактивная
-
-### Репозитории
-- `ReactiveCrudRepository`
-- Кастомные SQL-запросы через `DatabaseClient`
-- Нет JPA / Hibernate
-- Нет EntityManager
+## Тестирование
+- JUnit 5
+- Mockito
+- Hamcrest
+- Testcontainers (PostgreSQL)
 
 ---
 
-## 🗄️ База данных и миграции
+# 🗄️ База данных
 
-Для управления схемой БД используется Liquibase.
+Liquibase автоматически применяет миграции при старте приложения.
 
-При старте приложения автоматически применяются миграции:
+### Основные таблицы:
+- `items`
+- `cart_items`
+- `orders`
+- `order_items`
 
-- `001-init-schema.yaml` — создаёт таблицы:
-  - items
-  - cart_items
-  - orders
-  - order_items
-
-- `002-seed-items.yaml` — наполняет таблицу `items` начальными товарами (seed data)
+### Миграции:
+- `001-init-schema.yaml`
+- `002-seed-items.yaml`
 
 Seed-данные:
-- используются приложением «из коробки»
-- применяются в интеграционных тестах
+- применяются автоматически
+- используются в интеграционных тестах
 - не мокируются
 
 ---
 
-## 🧪 Тестирование
+# ▶️ Запуск приложения
 
-### Репозитории
-- Интеграционные тесты
-- PostgreSQL Testcontainers
-- Liquibase автоматически применяется
-- Проверяются реальные SQL-запросы
-- Используется реальная реактивная БД (R2DBC)
-
-### Сервисы
-- Юнит-тесты с Mockito
-- Используется `StepVerifier`
-- Транзакции подменяются passthrough-реализацией `TransactionalOperator`
-- Проверяется:
-  - реактивная цепочка
-  - корректный расчёт total_sum
-  - сохранение order_items
-  - очистка корзины
-  - обработка пустой корзины
-  - формирование витрины (rows по 3 элемента с placeholder)
-
-### Контроллеры
-- WebFlux тесты (`@WebFluxTest`)
-- WebTestClient
-- @MockBean для сервисов
-- Проверяется:
-  - имя view
-  - model-атрибуты
-  - redirect-логика
-  - корректная обработка form-data
-  - POST /buy
-  - POST /cart/items
-  - POST /items
-
----
-
-## 📦 Основные тестовые зависимости (Gradle)
-
-```gradle
-testImplementation 'org.springframework.boot:spring-boot-starter-test'
-testImplementation 'org.springframework.boot:spring-boot-starter-webflux-test'
-testImplementation 'org.springframework.boot:spring-boot-testcontainers'
-testImplementation 'org.testcontainers:junit-jupiter'
-testImplementation 'org.testcontainers:postgresql'
-testImplementation 'io.projectreactor:reactor-test'
-testImplementation 'org.hamcrest:hamcrest'
-```
-
----
-
-## 🐳 Docker
-
-Приложение и база данных запускаются через docker-compose.
-
-### PostgreSQL
-- image: postgres:16
-- database: my-market-app
-- user: my_market_user
-- password: my_market_pass
-
-### Spring Boot приложение
-- Java 21
-- порт: 8080
-- Liquibase применяется автоматически при старте
-- Используется R2DBC (не JDBC)
-
-Запуск всего окружения:
+## 1️⃣ Поднять PostgreSQL
 
 ```bash
-docker compose up --build
+docker compose up -d
 ```
 
-После запуска приложение доступно по адресу:
+## 2️⃣ Запустить приложение
 
+```bash
+./gradlew bootRun
+```
+
+После старта:
+
+```
 http://localhost:8080
+```
+
+Liquibase применится автоматически.
 
 ---
 
-## 🌐 Основные страницы приложения
+# 🧪 Запуск тестов
 
-`/` или `/items` — витрина товаров  
-`/items/{id}` — карточка товара  
-`/cart/items` — корзина  
-`/orders` — список заказов  
-`/orders/{id}` — детали заказа
+## Все тесты
+
+```bash
+./gradlew test
+```
+
+## Один конкретный тест
+
+```bash
+./gradlew test --tests "de.petrov.ya.java.mymarketapp.service.ItemsServiceTest"
+```
+
+## С логами
+
+```bash
+./gradlew test --info
+```
+
+---
+
+# 🧪 Как устроены тесты
+
+### Интеграционные
+- Testcontainers (PostgreSQL)
+- @ServiceConnection
+- Liquibase применяется автоматически
+
+### Сервисные
+- Mockito
+- проверка бизнес-логики
+- проверка транзакций
+- проверка реактивных цепочек (Mono / Flux)
+
+### Контроллеры
+- WebFlux
+- POST формы через `exchange.getFormData()`
 
 ---
 
-## 🧠 Особенности реализации
+# 🌐 Основные страницы
 
-- Полностью реактивный стек
-- Нет блокирующих операций
-- Нет JPA / Hibernate
-- Нет @Transactional (используется `TransactionalOperator`)
-- Order total рассчитывается реактивно
-- order_items сохраняются через `saveAll(Publisher)`
-- Корзина очищается реактивно после успешной покупки
-- UI построен на Thymeleaf (server-side rendering + WebFlux)
+- `/` или `/items` — витрина
+- `/items/{id}` — карточка товара
+- `/cart/items` — корзина
+- `/orders` — список заказов
+- `/orders/{id}` — детали заказа
 
 ---
 
-## 📌 Итог
+# 🔎 Проверка работы через curl
 
-Проект демонстрирует:
-- построение полноценного реактивного CRUD-приложения
-- работу с R2DBC + PostgreSQL
-- реактивные транзакции
-- интеграцию Liquibase
-- unit + integration тестирование реактивного кода
-- корректную работу формы POST в WebFlux
+## Витрина
+
+```bash
+curl -i "http://localhost:8080/items"
+```
+
+Поиск:
+
+```bash
+curl -i "http://localhost:8080/items?search=cap"
+```
+
+Сортировка:
+
+```bash
+curl -i "http://localhost:8080/items?sort=PRICE"
+```
+
+Пагинация:
+
+```bash
+curl -i "http://localhost:8080/items?pageNumber=2&pageSize=10"
+```
 
 ---
+
+## Добавить товар в корзину
+
+```bash
+curl -i -X POST "http://localhost:8080/items" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  --data "id=2&action=PLUS&search=&sort=NO&pageNumber=1&pageSize=5"
+```
+
+Уменьшить:
+
+```bash
+curl -i -X POST "http://localhost:8080/items" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  --data "id=2&action=MINUS&search=&sort=NO&pageNumber=1&pageSize=5"
+```
+
+---
+
+## Карточка товара
+
+```bash
+curl -i "http://localhost:8080/items/2"
+```
+
+Из карточки:
+
+```bash
+curl -i -X POST "http://localhost:8080/items/2" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  --data "action=PLUS"
+```
+
+---
+
+## Корзина
+
+```bash
+curl -i "http://localhost:8080/cart/items"
+```
+
+Изменить корзину:
+
+```bash
+curl -i -X POST "http://localhost:8080/cart/items" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  --data "id=2&action=PLUS"
+```
+
+Удалить:
+
+```bash
+curl -i -X POST "http://localhost:8080/cart/items" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  --data "id=2&action=DELETE"
+```
+
+---
+
+## Оформить заказ
+
+```bash
+curl -i -X POST "http://localhost:8080/buy"
+```
+
+---
+
+## Список заказов
+
+```bash
+curl -i "http://localhost:8080/orders"
+```
+
+Детали заказа:
+
+```bash
+curl -i "http://localhost:8080/orders/1"
+```
+
+---
+
+# 🔁 Архитектура
+
+## Контроллеры
+- WebFlux
+- возвращают `Mono<String>`
+- POST формы читаются через `exchange.getFormData()`
+
+## Репозитории
+- R2DBC
+- SQL через `DatabaseClient`
+- limit/offset для пагинации
+- сортировка в SQL
+
+## BuyService
+- транзакция через `TransactionalOperator`
+- создаётся `Order`
+- сохраняются `OrderItem`
+- очищается корзина
+- всё реактивно
+
+---
+
+# 🐳 Docker
+
+PostgreSQL:
+- image: `postgres:16`
+- database: `my-market-app`
+- user: `my_market_user`
+- password: `my_market_pass`
+
+Приложение:
+- Java 21
+- порт 8080
+- Liquibase применяется автоматически

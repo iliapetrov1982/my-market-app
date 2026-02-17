@@ -22,6 +22,7 @@ logging:
   level:
     liquibase: INFO
     org.springframework.r2dbc: INFO
-    org.springframework.boot.context.properties: DEBUG
-    io.r2dbc.postgresql.QUERY: DEBUG
-    io.r2dbc.postgresql.PARAM: DEBUG
+#    org.springframework.boot.context.properties: DEBUG
+#    io.r2dbc.postgresql.QUERY: DEBUG
+#    io.r2dbc.postgresql.PARAM: DEBUG
+

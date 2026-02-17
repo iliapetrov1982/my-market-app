@@ -12,12 +12,24 @@ import org.springframework.web.server.ServerWebExchange;
 import org.springframework.web.util.UriComponentsBuilder;
 import reactor.core.publisher.Mono;
 
+import java.util.Set;
+
 @Controller
 @RequiredArgsConstructor
 public class ItemsController {
 
+    private static final int DEFAULT_PAGE_NUMBER = 1;
+    private static final int DEFAULT_PAGE_SIZE = 5;
+
+    private static final Set<Integer> ALLOWED_PAGE_SIZES =
+            Set.of(2, 5, 10, 20, 50, 100);
+
     private final ItemsService itemsService;
     private final CartCommandService cartService;
+
+    // =========================
+    // GET /items
+    // =========================
 
     @GetMapping({"/", "/items"})
     public Mono<String> items(
@@ -27,8 +39,8 @@ public class ItemsController {
             @RequestParam(required = false, defaultValue = "5") Integer pageSize,
             Model model
     ) {
-        int pn = (pageNumber == null) ? 1 : pageNumber;
-        int ps = (pageSize == null) ? 5 : pageSize;
+        int pn = normalizePageNumber(pageNumber);
+        int ps = normalizePageSize(pageSize);
 
         return itemsService.getItemsPage(search, ItemsSort.from(sort), pn, ps)
                 .doOnNext(page -> {
@@ -40,58 +52,81 @@ public class ItemsController {
                 .thenReturn("items");
     }
 
-    /**
-     * ТЗ: POST /items?id=&search=&sort=&pageNumber=&pageSize=&action=
-     * Реально кнопки из HTML шлют это как form-urlencoded body — читаем formData руками (WebFlux-safe).
-     */
+    // =========================
+    // POST /items
+    // =========================
+
     @PostMapping("/items")
     public Mono<String> changeItemCount(ServerWebExchange exchange) {
         return exchange.getFormData()
                 .flatMap(form -> {
-                    String idStr = trimToNull(form.getFirst("id"));
-                    String actionStr = trimToNull(form.getFirst("action"));
 
                     String search = form.getFirst("search");
                     String sort = trimToNull(form.getFirst("sort"));
-                    Integer pageNumber = parseIntOrDefault(form.getFirst("pageNumber"), 1);
-                    Integer pageSize = parseIntOrDefault(form.getFirst("pageSize"), 5);
 
-                    String redirectUrl = UriComponentsBuilder.fromPath("/items")
-                            .queryParam("search", search)
-                            .queryParam("sort", (sort == null ? "NO" : sort))
-                            .queryParam("pageNumber", pageNumber)
-                            .queryParam("pageSize", pageSize)
-                            .build()
-                            .toUriString();
+                    int pageNumber = normalizePageNumber(
+                            parseIntOrNull(form.getFirst("pageNumber"))
+                    );
 
-                    if (idStr == null || actionStr == null) {
-                        return Mono.just("redirect:" + redirectUrl);
+                    int pageSize = normalizePageSize(
+                            parseIntOrNull(form.getFirst("pageSize"))
+                    );
+
+                    String redirectUrl = buildRedirectUrl(
+                            search, sort, pageNumber, pageSize
+                    );
+
+                    Long id = parsePositiveLongOrNull(form.getFirst("id"));
+                    String actionStr = trimToNull(form.getFirst("action"));
+
+                    if (id == null || actionStr == null) {
+                        return redirect(redirectUrl);
                     }
 
-                    long id = Long.parseLong(idStr);
                     return cartService.apply(id, CartAction.from(actionStr))
-                            .thenReturn("redirect:" + redirectUrl);
+                            .then(redirect(redirectUrl));
                 });
     }
 
+    // =========================
+    // GET /items/{id}
+    // =========================
 
     @GetMapping("/items/{id}")
     public Mono<String> item(@PathVariable long id, Model model) {
+        if (id <= 0) {
+            return redirect("/items");
+        }
+
         return itemsService.getItem(id)
                 .doOnNext(dto -> model.addAttribute("item", dto))
                 .thenReturn("item");
     }
 
+    // =========================
+    // POST /items/{id}
+    // =========================
+
     @PostMapping("/items/{id}")
-    public Mono<String> changeItemCount(@PathVariable long id, ServerWebExchange exchange, Model model) {
+    public Mono<String> changeItemCount(
+            @PathVariable long id,
+            ServerWebExchange exchange,
+            Model model
+    ) {
+        if (id <= 0) {
+            return redirect("/items");
+        }
+
         return exchange.getFormData()
                 .flatMap(form -> {
                     String actionStr = trimToNull(form.getFirst("action"));
+
                     if (actionStr == null) {
                         return itemsService.getItemPage(id)
                                 .doOnNext(dto -> model.addAttribute("item", dto))
                                 .thenReturn("item");
                     }
+
                     return cartService.apply(id, CartAction.from(actionStr))
                             .then(itemsService.getItemPage(id))
                             .doOnNext(dto -> model.addAttribute("item", dto))
@@ -99,18 +134,76 @@ public class ItemsController {
                 });
     }
 
+    // =========================
+    // Redirect builder
+    // =========================
+
+    private static String buildRedirectUrl(
+            String search,
+            String sort,
+            int pageNumber,
+            int pageSize
+    ) {
+        UriComponentsBuilder builder = UriComponentsBuilder
+                .fromPath("/items")
+                .queryParam("sort", sort == null ? "NO" : sort)
+                .queryParam("pageNumber", pageNumber)
+                .queryParam("pageSize", pageSize);
+
+        if (search != null) {
+            builder.queryParam("search", search);
+        }
+
+        return builder.build().toUriString();
+    }
+
+    private static Mono<String> redirect(String url) {
+        return Mono.just("redirect:" + url);
+    }
+
+    // =========================
+    // Validation helpers
+    // =========================
+
+    private static int normalizePageNumber(Integer pn) {
+        return (pn == null || pn < 1)
+                ? DEFAULT_PAGE_NUMBER
+                : pn;
+    }
+
+    private static int normalizePageSize(Integer ps) {
+        if (ps == null) return DEFAULT_PAGE_SIZE;
+        return ALLOWED_PAGE_SIZES.contains(ps)
+                ? ps
+                : DEFAULT_PAGE_SIZE;
+    }
+
+    private static Integer parseIntOrNull(String s) {
+        try {
+            if (s == null) return null;
+            String t = s.trim();
+            if (t.isEmpty()) return null;
+            return Integer.parseInt(t);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private static Long parsePositiveLongOrNull(String s) {
+        try {
+            if (s == null) return null;
+            String t = s.trim();
+            if (t.isEmpty()) return null;
+            long v = Long.parseLong(t);
+            return v > 0 ? v : null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     private static String trimToNull(String s) {
         if (s == null) return null;
         String t = s.trim();
         return t.isEmpty() ? null : t;
-    }
-
-    private static Integer parseIntOrDefault(String s, int def) {
-        try {
-            if (s == null) return def;
-            return Integer.parseInt(s.trim());
-        } catch (Exception e) {
-            return def;
-        }
     }
 }
