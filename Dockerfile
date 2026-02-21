@@ -1,15 +1,15 @@
 # =========================
 #        .dockerignore
 # =========================
-.git
-.gitignore
-.gradle
-build
-.idea
-*.iml
-node_modules
-docker-compose.yml
-README.md
+#.git
+#.gitignore
+#.gradle
+#build
+#.idea
+#*.iml
+#node_modules
+#docker-compose.yml
+#README.md
 
 
 # =========================

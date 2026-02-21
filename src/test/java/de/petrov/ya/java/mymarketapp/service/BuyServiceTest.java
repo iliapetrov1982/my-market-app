@@ -97,18 +97,15 @@ class BuyServiceTest {
     // ================================================================
     @Test
     void buy_happyPath_shouldCreateOrderItems_updateTotal_clearCart_andReturnOrderId() {
-
         // ------------------------------------------------------------
-        // 1. Готовим корзину
+        // 1) Cart
         // ------------------------------------------------------------
         CartItem ci1 = new CartItem(1L, 2); // 2 * 100
         CartItem ci2 = new CartItem(2L, 1); // 1 * 50
-
-        when(cartItemRepository.findAll())
-                .thenReturn(Flux.just(ci1, ci2));
+        when(cartItemRepository.findAll()).thenReturn(Flux.just(ci1, ci2));
 
         // ------------------------------------------------------------
-        // 2. Готовим реальные товары (как будто из БД)
+        // 2) Items (as from DB)
         // ------------------------------------------------------------
         Item item1 = new Item("Apple", "d1", "img1", 100L);
         item1.setId(1L);
@@ -120,90 +117,51 @@ class BuyServiceTest {
                 .thenReturn(Flux.just(item1, item2));
 
         // ------------------------------------------------------------
-        // 3. Захват orderItems, которые будут сохранены
+        // 3) Capture OrderItems passed to saveAll (reactive, no block)
         // ------------------------------------------------------------
-        /*
-         * saveAll() принимает Publisher<OrderItem>.
-         *
-         * Нам нужно:
-         *  - подписаться на него
-         *  - собрать элементы
-         *  - вернуть пустой Flux (как будто сохранение прошло)
-         *
-         * CopyOnWriteArrayList используется потому что:
-         *  - Flux может выполняться в другом потоке
-         *  - это thread-safe коллекция
-         */
         java.util.List<OrderItem> capturedOrderItems =
                 new java.util.concurrent.CopyOnWriteArrayList<>();
 
         doAnswer(inv -> {
             @SuppressWarnings("unchecked")
-            Publisher<OrderItem> pub =
-                    (Publisher<OrderItem>) inv.getArgument(0);
+            Publisher<OrderItem> pub = (Publisher<OrderItem>) inv.getArgument(0);
 
             return Flux.from(pub)
                     .doOnNext(capturedOrderItems::add)
-                    .thenMany(Flux.empty()); // имитируем завершённый saveAll
+                    .thenMany(Flux.empty()); // emulate successful saveAll
         }).when(orderItemRepository).saveAll(any());
 
         // ------------------------------------------------------------
-        // 4. Snapshot Order при каждом save()
+        // 4) Capture Order passed to save()
         // ------------------------------------------------------------
-        /*
-         * В buy() orderRepository.save() вызывается ДВАЖДЫ:
-         *
-         *   1) создаётся новый Order(total=0)
-         *   2) обновляется totalSum и createdAt
-         *
-         * Проблема:
-         * Order — мутируемый объект.
-         * Если мы просто захватим его — оба save() будут ссылаться
-         * на один и тот же объект.
-         *
-         * Поэтому делаем SNAPSHOT — копируем значения в record.
-         */
+        java.util.concurrent.atomic.AtomicReference<Order> savedOrderRef =
+                new java.util.concurrent.atomic.AtomicReference<>();
 
-        record OrderSnapshot(Long id, OffsetDateTime createdAt, Long totalSum) {}
+        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> {
+            Order arg = inv.getArgument(0);
 
-        java.util.List<OrderSnapshot> snapshots =
-                new java.util.concurrent.CopyOnWriteArrayList<>();
+            // snapshot-by-copy (so later mutations won't affect assertions)
+            Order snap = new Order(arg.getId());
+            snap.setCreatedAt(arg.getCreatedAt());
+            snap.setTotalSum(arg.getTotalSum());
+            savedOrderRef.set(snap);
 
-        when(orderRepository.save(any(Order.class)))
-                .thenAnswer(inv -> {
-                    Order arg = inv.getArgument(0);
+            // emulate DB generating ID
+            arg.setId(42L);
+            return Mono.just(arg);
+        });
 
-                    // фиксируем состояние ДО изменений
-                    snapshots.add(
-                            new OrderSnapshot(
-                                    arg.getId(),
-                                    arg.getCreatedAt(),
-                                    arg.getTotalSum()
-                            )
-                    );
-
-                    // имитируем поведение БД:
-                    // при первом save() генерируется ID
-                    if (arg.getId() == null) {
-                        arg.setId(42L);
-                        arg.setCreatedAt(null); // заставим updateTotal() установить дату
-                    }
-
-                    return Mono.just(arg);
-                });
-
-        when(cartItemRepository.deleteAll())
-                .thenReturn(Mono.empty());
+        when(cartItemRepository.deleteAll()).thenReturn(Mono.empty());
 
         // ------------------------------------------------------------
-        // 5. Запускаем buy()
+        // 5) Run
         // ------------------------------------------------------------
         StepVerifier.create(buyService.buy())
                 .expectNext(42L)
                 .verifyComplete();
 
         // ------------------------------------------------------------
-        // 6. Проверяем OrderItems
+        // 6) Assert order items created correctly
         // ------------------------------------------------------------
         assertThat(capturedOrderItems).hasSize(2);
 
@@ -228,30 +186,22 @@ class BuyServiceTest {
         assertThat(oi2.getQuantity()).isEqualTo(1);
 
         // ------------------------------------------------------------
-        // 7. Проверяем save() Order
+        // 7) Assert saved Order contains computed total + createdAt
         // ------------------------------------------------------------
         long expectedTotal = 100L * 2 + 50L * 1; // 250
 
-        assertThat(snapshots).hasSize(2);
-
-        OrderSnapshot first = snapshots.get(0);
-        OrderSnapshot second = snapshots.get(1);
-
-        // Первый save — Order(total=0)
-        assertThat(first.totalSum()).isEqualTo(0L);
-
-        // Второй save — уже с рассчитанным total
-        assertThat(second.id()).isEqualTo(42L);
-        assertThat(second.totalSum()).isEqualTo(expectedTotal);
-        assertThat(second.createdAt()).isNotNull();
-        assertThat(second.createdAt())
-                .isBeforeOrEqualTo(OffsetDateTime.now());
+        Order savedOrder = savedOrderRef.get();
+        assertThat(savedOrder).isNotNull();
+        assertThat(savedOrder.getTotalSum()).isEqualTo(expectedTotal);
+        assertThat(savedOrder.getCreatedAt()).isNotNull();
+        assertThat(savedOrder.getCreatedAt()).isBeforeOrEqualTo(OffsetDateTime.now());
 
         // ------------------------------------------------------------
-        // 8. Проверяем взаимодействия
+        // 8) Verify interactions
         // ------------------------------------------------------------
         verify(cartItemRepository, times(1)).findAll();
         verify(itemRepository, times(1)).findAllById(anyIterable());
+        verify(orderRepository, times(1)).save(any(Order.class));     // <--- теперь ожидаем 1 раз
         verify(orderItemRepository, times(1)).saveAll(any());
         verify(cartItemRepository, times(1)).deleteAll();
         verify(tx, times(1)).transactional(any(Mono.class));

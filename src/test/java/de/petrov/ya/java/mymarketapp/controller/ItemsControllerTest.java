@@ -6,16 +6,26 @@ import de.petrov.ya.java.mymarketapp.dto.page.ItemsSort;
 import de.petrov.ya.java.mymarketapp.dto.page.Paging;
 import de.petrov.ya.java.mymarketapp.service.CartCommandService;
 import de.petrov.ya.java.mymarketapp.service.ItemsService;
+
+import java.net.URI;
 import java.util.List;
+
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webflux.test.autoconfigure.WebFluxTest;
+import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.reactive.server.WebTestClient;
+import org.springframework.util.MultiValueMap;
+import org.springframework.web.reactive.function.BodyInserters;
+import org.springframework.web.util.UriComponents;
+import org.springframework.web.util.UriComponentsBuilder;
+import reactor.core.publisher.Mono;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.equalTo;
+import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.Matchers.nullValue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -122,15 +132,32 @@ class ItemsControllerTest {
 
     @Test
     void postItems_changesQuantity_andRedirectsPreservingParams() {
-        when(cartService.apply(5L, CartAction.PLUS)).thenReturn(reactor.core.publisher.Mono.empty());
+        when(cartService.apply(5L, CartAction.PLUS)).thenReturn(Mono.empty());
 
-        webTestClient.post()
+        var result = webTestClient.post()
                 .uri("/items")
-                .bodyValue("id=5&action=PLUS&search=q&sort=ALPHA&pageNumber=3&pageSize=20")
-                .header("Content-Type", "application/x-www-form-urlencoded")
+                .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                .body(BodyInserters.fromFormData("id", "5")
+                        .with("action", "PLUS")
+                        .with("search", "q")
+                        .with("sort", "ALPHA")
+                        .with("pageNumber", "3")
+                        .with("pageSize", "20"))
                 .exchange()
                 .expectStatus().is3xxRedirection()
-                .expectHeader().valueEquals("Location", "/items?search=q&sort=ALPHA&pageNumber=3&pageSize=20");
+                .returnResult(Void.class);
+
+        URI location = result.getResponseHeaders().getLocation();
+        assertThat("Location header must be present", location, notNullValue());
+
+        UriComponents uc = UriComponentsBuilder.fromUri(location).build();
+        assertThat("redirect path", uc.getPath(), equalTo("/items"));
+
+        MultiValueMap<String, String> params = uc.getQueryParams();
+        assertThat(params.getFirst("search"), equalTo("q"));
+        assertThat(params.getFirst("sort"), equalTo("ALPHA"));
+        assertThat(params.getFirst("pageNumber"), equalTo("3"));
+        assertThat(params.getFirst("pageSize"), equalTo("20"));
 
         verify(cartService, times(1)).apply(5L, CartAction.PLUS);
         verifyNoInteractions(itemsService);
@@ -138,15 +165,30 @@ class ItemsControllerTest {
 
     @Test
     void postItems_whenPageNumberOrPageSizeMissing_setsDefaultsInRedirect() {
-        when(cartService.apply(7L, CartAction.MINUS)).thenReturn(reactor.core.publisher.Mono.empty());
+        when(cartService.apply(7L, CartAction.MINUS)).thenReturn(Mono.empty());
 
-        webTestClient.post()
+        var result = webTestClient.post()
                 .uri("/items")
-                .bodyValue("id=7&action=MINUS&search=q&sort=NO")
-                .header("Content-Type", "application/x-www-form-urlencoded")
+                .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                .body(BodyInserters.fromFormData("id", "7")
+                        .with("action", "MINUS")
+                        .with("search", "q")
+                        .with("sort", "NO"))
                 .exchange()
                 .expectStatus().is3xxRedirection()
-                .expectHeader().valueEquals("Location", "/items?search=q&sort=NO&pageNumber=1&pageSize=5");
+                .returnResult(Void.class);
+
+        URI location = result.getResponseHeaders().getLocation();
+        assertThat("Location header must be present", location, notNullValue());
+
+        UriComponents uc = UriComponentsBuilder.fromUri(location).build();
+        assertThat("redirect path", uc.getPath(), equalTo("/items"));
+
+        MultiValueMap<String, String> params = uc.getQueryParams();
+        assertThat(params.getFirst("search"), equalTo("q"));
+        assertThat(params.getFirst("sort"), equalTo("NO"));
+        assertThat(params.getFirst("pageNumber"), equalTo("1"));
+        assertThat(params.getFirst("pageSize"), equalTo("5"));
 
         verify(cartService, times(1)).apply(7L, CartAction.MINUS);
         verifyNoInteractions(itemsService);
