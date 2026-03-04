@@ -1,1 +1,4 @@
 rootProject.name = 'my-market-app'
+
+include 'storefront'
+include 'payments'

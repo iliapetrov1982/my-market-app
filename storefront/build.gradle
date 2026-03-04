@@ -1,0 +1,46 @@
+plugins {
+    id 'java'
+    id 'org.springframework.boot'
+    id 'io.spring.dependency-management'
+}
+
+description = 'storefront'
+
+configurations {
+    compileOnly {
+        extendsFrom annotationProcessor
+    }
+}
+
+dependencies {
+    // --- Reactive stack ---
+    implementation 'org.springframework.boot:spring-boot-starter-webflux'
+    implementation 'org.springframework.boot:spring-boot-starter-data-r2dbc'
+
+    // UI templates (works with WebFlux)
+    implementation 'org.springframework.boot:spring-boot-starter-thymeleaf'
+
+    // R2DBC драйвер для Postgres
+    runtimeOnly 'org.postgresql:r2dbc-postgresql'
+
+    // --- DB migrations (Liquibase via JDBC) ---
+    implementation 'org.springframework.boot:spring-boot-starter-liquibase'
+    implementation 'org.springframework.boot:spring-boot-starter-jdbc'
+    runtimeOnly 'org.postgresql:postgresql' // JDBC драйвер для liquibase
+
+    // Lombok
+    compileOnly 'org.projectlombok:lombok'
+    annotationProcessor 'org.projectlombok:lombok'
+
+    // Tests
+    testImplementation "org.springframework.boot:spring-boot-starter-test"
+    testImplementation 'io.projectreactor:reactor-test' // StepVerifier
+    testImplementation 'org.springframework.boot:spring-boot-testcontainers'
+    testImplementation 'org.testcontainers:testcontainers-junit-jupiter'
+    testImplementation 'org.testcontainers:testcontainers-postgresql'
+    testImplementation 'org.hamcrest:hamcrest'
+    testImplementation "org.testcontainers:r2dbc:1.20.4"
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    testImplementation 'org.springframework.boot:spring-boot-starter-webflux-test'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}

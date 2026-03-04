@@ -21,8 +21,8 @@ FROM eclipse-temurin:21-jdk AS build
 WORKDIR /workspace
 
 # 1️⃣ Копируем только gradle-файлы (чтобы кешировались зависимости)
-COPY gradlew settings.gradle build.gradle /workspace/
-COPY gradle /workspace/gradle
+COPY ../gradlew settings.gradle build.gradle /workspace/
+COPY ../gradle /workspace/gradle
 
 # Делаем gradlew исполняемым
 RUN chmod +x gradlew
