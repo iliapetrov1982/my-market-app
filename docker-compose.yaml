@@ -3,51 +3,59 @@ services:
     image: postgres:16
     container_name: my-market-postgres16
     restart: unless-stopped
-
     environment:
       POSTGRES_DB: my-market-app
       POSTGRES_USER: my_market_user
       POSTGRES_PASSWORD: my_market_pass
       TZ: Europe/Berlin
-
     ports:
       - "5432:5432"
-
     volumes:
       - pg16_data:/var/lib/postgresql/data
-
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U my_market_user -d \"my-market-app\" || exit 1"]
       interval: 5s
       timeout: 3s
       retries: 20
 
-  app:
+  redis:
+    image: redis:7-alpine
+    container_name: my-market-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  storefront:
     build:
       context: .
       dockerfile: storefront/Dockerfile
-    container_name: my-market-app
+    container_name: my-market-storefront
     restart: unless-stopped
-
     depends_on:
       postgres:
         condition: service_healthy
-
+      redis:
+        condition: service_healthy
     environment:
       TZ: Europe/Berlin
       SERVER_PORT: "8080"
 
-      # --- R2DBC (runtime) ---
       SPRING_R2DBC_URL: r2dbc:postgresql://postgres:5432/my-market-app
       SPRING_R2DBC_USERNAME: my_market_user
       SPRING_R2DBC_PASSWORD: my_market_pass
 
-      # --- JDBC (Liquibase only) ---
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/my-market-app
       SPRING_DATASOURCE_USERNAME: my_market_user
       SPRING_DATASOURCE_PASSWORD: my_market_pass
       SPRING_LIQUIBASE_ENABLED: "true"
 
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: "6379"
     ports:
       - "8080:8080"
 
