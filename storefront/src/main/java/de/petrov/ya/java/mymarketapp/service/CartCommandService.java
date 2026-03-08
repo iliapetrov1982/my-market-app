@@ -3,6 +3,7 @@ package de.petrov.ya.java.mymarketapp.service;
 import de.petrov.ya.java.mymarketapp.dto.cart.CartAction;
 import de.petrov.ya.java.mymarketapp.entity.CartItem;
 import de.petrov.ya.java.mymarketapp.repository.CartItemRepository;
+import de.petrov.ya.java.mymarketapp.service.cache.ItemCacheService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
@@ -12,18 +13,20 @@ import reactor.core.publisher.Mono;
 public class CartCommandService {
 
     private final CartItemRepository cartItemRepository;
+    private final ItemCacheService itemCacheService;
 
     public Mono<Void> apply(long itemId, CartAction action) {
         return cartItemRepository.findById(itemId)
                 .flatMap(ci -> switch (action) {
-                    case PLUS -> incrementExisting(ci);
-                    case MINUS -> decrementExisting(ci);
-                    case DELETE -> cartItemRepository.delete(ci);
+                    case PLUS -> incrementExisting(ci).thenReturn(true);
+                    case MINUS -> decrementExisting(ci).thenReturn(true);
+                    case DELETE -> cartItemRepository.delete(ci).thenReturn(true);
                 })
                 .switchIfEmpty(switch (action) {
-                    case PLUS -> createNew(itemId);
-                    case MINUS, DELETE -> Mono.empty(); // нечего делать
+                    case PLUS -> createNew(itemId).thenReturn(true);
+                    case MINUS, DELETE -> Mono.just(false);
                 })
+                .flatMap(changed -> changed ? evict(itemId) : Mono.empty())
                 .then();
     }
 
@@ -43,5 +46,9 @@ public class CartCommandService {
         }
         ci.setQuantity(next);
         return cartItemRepository.save(ci).then();
+    }
+
+    private Mono<Void> evict(long itemId) {
+        return itemCacheService.evict(itemId).then();
     }
 }

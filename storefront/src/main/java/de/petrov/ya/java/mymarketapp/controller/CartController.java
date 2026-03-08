@@ -24,6 +24,7 @@ public class CartController {
                 .doOnNext(page -> {
                     model.addAttribute("items", page.items());
                     model.addAttribute("total", page.total());
+                    model.addAttribute("balance", page.balance());
                 })
                 .thenReturn("cart");
     }

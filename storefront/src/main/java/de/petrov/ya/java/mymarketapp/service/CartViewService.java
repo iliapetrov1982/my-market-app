@@ -10,25 +10,33 @@ import java.util.List;
 @Service
 public class CartViewService {
 
-    public record CartPage(List<ItemDto> items, long total) {}
+    public record CartPage(List<ItemDto> items, long total, long balance) {}
 
     private final ItemQueryRepository itemQueryRepository;
+    private final PaymentsGateway paymentsGateway;
 
-    public CartViewService(ItemQueryRepository itemQueryRepository) {
+    public CartViewService(
+            ItemQueryRepository itemQueryRepository,
+            PaymentsGateway paymentsGateway
+    ) {
         this.itemQueryRepository = itemQueryRepository;
+        this.paymentsGateway = paymentsGateway;
     }
 
     public Mono<CartPage> getCartPage() {
+        Mono<List<ItemDto>> itemsMono = itemQueryRepository.findCartItems().collectList();
+        Mono<Long> balanceMono = paymentsGateway.getBalance();
 
-        return itemQueryRepository.findCartItems()
-                .collectList()
-                .map(items -> {
+        return Mono.zip(itemsMono, balanceMono)
+                .map(tuple -> {
+                    List<ItemDto> items = tuple.getT1();
+                    long balance = tuple.getT2();
 
                     long total = items.stream()
                             .mapToLong(i -> i.price() * (long) i.count())
                             .sum();
 
-                    return new CartPage(items, total);
+                    return new CartPage(items, total, balance);
                 });
     }
 }

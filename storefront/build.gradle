@@ -2,6 +2,7 @@ plugins {
     id 'java'
     id 'org.springframework.boot'
     id 'io.spring.dependency-management'
+    id 'org.openapi.generator'
 }
 
 description = 'storefront'
@@ -12,10 +13,27 @@ configurations {
     }
 }
 
+def generatedPaymentsClientDir = layout.buildDirectory.dir("generated/openapi/payments-client")
+
+sourceSets {
+    main {
+        java {
+            srcDir generatedPaymentsClientDir.map { it.dir("src/main/java") }
+        }
+    }
+}
+
+
 dependencies {
-    // --- Reactive stack ---
+    // Reactive stack
     implementation 'org.springframework.boot:spring-boot-starter-webflux'
     implementation 'org.springframework.boot:spring-boot-starter-data-r2dbc'
+    implementation 'org.springframework.boot:spring-boot-starter-data-redis-reactive'
+
+    implementation 'com.fasterxml.jackson.core:jackson-annotations'
+    implementation 'com.fasterxml.jackson.core:jackson-core'
+    implementation 'com.fasterxml.jackson.core:jackson-databind'
+    implementation 'com.fasterxml.jackson.datatype:jackson-datatype-jsr310'
 
     // UI templates (works with WebFlux)
     implementation 'org.springframework.boot:spring-boot-starter-thymeleaf'
@@ -23,7 +41,7 @@ dependencies {
     // R2DBC драйвер для Postgres
     runtimeOnly 'org.postgresql:r2dbc-postgresql'
 
-    // --- DB migrations (Liquibase via JDBC) ---
+    // DB migrations (Liquibase via JDBC)
     implementation 'org.springframework.boot:spring-boot-starter-liquibase'
     implementation 'org.springframework.boot:spring-boot-starter-jdbc'
     runtimeOnly 'org.postgresql:postgresql' // JDBC драйвер для liquibase
@@ -42,5 +60,36 @@ dependencies {
     testImplementation "org.testcontainers:r2dbc:1.20.4"
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
     testImplementation 'org.springframework.boot:spring-boot-starter-webflux-test'
-    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+openApiGenerate {
+    generatorName.set("java")
+    inputSpec.set("$rootDir/openapi/payments-api.yaml")
+    outputDir.set(generatedPaymentsClientDir.get().asFile.absolutePath)
+
+    apiPackage.set("de.petrov.ya.java.mymarketapp.payments.api")
+    modelPackage.set("de.petrov.ya.java.mymarketapp.payments.model")
+    invokerPackage.set("de.petrov.ya.java.mymarketapp.payments.invoker")
+
+    globalProperties.set([
+            apis           : "",
+            models         : "",
+            supportingFiles: ""
+    ])
+
+    configOptions.set([
+            library              : "webclient",
+            generateClientAsBean : "false",
+            useJakartaEe         : "true",
+            useBeanValidation    : "false",
+            openApiNullable      : "false",
+            dateLibrary          : "java8",
+            documentationProvider: "source"
+    ])
+
+    validateSpec.set(true)
+}
+
+tasks.named("compileJava") {
+    dependsOn tasks.named("openApiGenerate")
 }

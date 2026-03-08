@@ -26,6 +26,7 @@ public class BuyService {
     private final ItemRepository itemRepository;
     private final OrderRepository orderRepository;
     private final OrderItemRepository orderItemRepository;
+    private final PaymentsGateway paymentsGateway;
     private final TransactionalOperator tx;
 
     public Mono<Long> buy() {
@@ -46,41 +47,44 @@ public class BuyService {
                                 Map<Long, Item> itemsMap = items.stream()
                                         .collect(Collectors.toMap(Item::getId, Function.identity()));
 
-                                // 1) считаем итог ДО сохранения order
                                 long totalSum = cartItems.stream()
                                         .mapToLong(ci -> {
                                             Item item = itemsMap.get(ci.getItemId());
                                             if (item == null) {
-                                                // На всякий случай (если товар удалили/не найден)
                                                 throw new IllegalStateException("Item not found: " + ci.getItemId());
                                             }
                                             return item.getPrice() * (long) ci.getQuantity();
                                         })
                                         .sum();
 
-                                // 2) сохраняем order ОДИН раз уже с totalSum
-                                Order order = new Order(totalSum); // createdAt выставится в конструкторе
+                                return paymentsGateway.charge(totalSum)
+                                        .flatMap(success -> {
+                                            if (!success) {
+                                                return Mono.error(new IllegalStateException("Payment failed"));
+                                            }
 
-                                return orderRepository.save(order)
-                                        .flatMap(savedOrder -> {
-                                            long orderId = savedOrder.getId();
+                                            Order order = new Order(totalSum);
 
-                                            Flux<OrderItem> orderItemsFlux = Flux.fromIterable(cartItems)
-                                                    .map(ci -> {
-                                                        Item item = itemsMap.get(ci.getItemId());
-                                                        return new OrderItem(
-                                                                orderId,
-                                                                item.getId(),
-                                                                item.getTitle(),
-                                                                item.getPrice(),
-                                                                ci.getQuantity()
-                                                        );
+                                            return orderRepository.save(order)
+                                                    .flatMap(savedOrder -> {
+                                                        long orderId = savedOrder.getId();
+
+                                                        Flux<OrderItem> orderItemsFlux = Flux.fromIterable(cartItems)
+                                                                .map(ci -> {
+                                                                    Item item = itemsMap.get(ci.getItemId());
+                                                                    return new OrderItem(
+                                                                            orderId,
+                                                                            item.getId(),
+                                                                            item.getTitle(),
+                                                                            item.getPrice(),
+                                                                            ci.getQuantity()
+                                                                    );
+                                                                });
+
+                                                        return orderItemRepository.saveAll(orderItemsFlux)
+                                                                .then(cartItemRepository.deleteAll())
+                                                                .thenReturn(orderId);
                                                     });
-
-                                            // 3) сохраняем позиции заказа, чистим корзину, возвращаем id
-                                            return orderItemRepository.saveAll(orderItemsFlux)
-                                                    .then(cartItemRepository.deleteAll())
-                                                    .thenReturn(orderId);
                                         });
                             });
                 })

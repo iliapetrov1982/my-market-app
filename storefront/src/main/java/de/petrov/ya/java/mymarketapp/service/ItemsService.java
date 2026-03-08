@@ -3,7 +3,9 @@ package de.petrov.ya.java.mymarketapp.service;
 import de.petrov.ya.java.mymarketapp.dto.page.ItemDto;
 import de.petrov.ya.java.mymarketapp.dto.page.ItemsSort;
 import de.petrov.ya.java.mymarketapp.dto.page.Paging;
+import de.petrov.ya.java.mymarketapp.exception.EntityNotFoundException;
 import de.petrov.ya.java.mymarketapp.repository.ItemQueryRepository;
+import de.petrov.ya.java.mymarketapp.service.cache.ItemCacheService;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -12,14 +14,20 @@ import reactor.core.publisher.Mono;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Supplier;
 
 @Service
 public class ItemsService {
 
     private final ItemQueryRepository itemQueryRepository;
+    private final ItemCacheService itemCacheService;
 
-    public ItemsService(ItemQueryRepository itemQueryRepository) {
+    public ItemsService(
+            ItemQueryRepository itemQueryRepository,
+            ItemCacheService itemCacheService
+    ) {
         this.itemQueryRepository = itemQueryRepository;
+        this.itemCacheService = itemCacheService;
     }
 
     public Mono<ItemsPage> getItemsPage(String search, ItemsSort sort, int pageNumber, int pageSize) {
@@ -34,13 +42,10 @@ public class ItemsService {
             case NO -> Sort.by(Sort.Order.asc("id"));
         };
 
-        // В R2DBC сортировку реально применяем в SQL.
-        // Поэтому Sort здесь держим только для UI/логики PageRequest.
         var pageable = PageRequest.of(safePageNumber - 1, safePageSize, uiSort);
 
         return loadPage(safeSearch, sort, pageable)
                 .flatMap(page -> {
-                    // если ушли сильно за конец — отдаём последнюю страницу (как раньше)
                     int totalPages = page.getTotalPages();
                     if (totalPages > 0 && safePageNumber > totalPages) {
                         int lastPage = totalPages;
@@ -66,16 +71,12 @@ public class ItemsService {
                 });
     }
 
-    /**
-     * Загружает данные + total и собирает PageImpl.
-     */
     private Mono<PageImpl<ItemDto>> loadPage(String search, ItemsSort sort, PageRequest pageable) {
         String q = search.isBlank() ? "" : search;
 
         int limit = pageable.getPageSize();
         int offset = (int) pageable.getOffset();
 
-        // Сортировку применяем в SQL: для этого передаём sort вниз.
         Mono<List<ItemDto>> dataMono = itemQueryRepository
                 .findShowcase(q, sort, limit, offset)
                 .collectList();
@@ -114,14 +115,28 @@ public class ItemsService {
     ) {}
 
     public Mono<ItemDto> getItem(long id) {
-        // "не 404" метод можно оставить как IllegalArgumentException (как раньше),
-        return itemQueryRepository.findItemPage(id)
-                .switchIfEmpty(Mono.error(new IllegalArgumentException("Item not found: " + id)));
+        return getCachedItem(
+                id,
+                () -> new IllegalArgumentException("Item not found: " + id)
+        );
     }
 
     public Mono<ItemDto> getItemPage(long id) {
-        // для 404 (как раньше EntityNotFoundException)
-        return itemQueryRepository.findItemPage(id)
-                .switchIfEmpty(Mono.error(new de.petrov.ya.java.mymarketapp.exception.EntityNotFoundException("Item not found: " + id)));
+        return getCachedItem(
+                id,
+                () -> new EntityNotFoundException("Item not found: " + id)
+        );
+    }
+
+    private Mono<ItemDto> getCachedItem(long id, Supplier<? extends RuntimeException> exceptionSupplier) {
+        return itemCacheService.get(id)
+                .switchIfEmpty(Mono.defer(() ->
+                        itemQueryRepository.findItemPage(id)
+                                .switchIfEmpty(Mono.error(exceptionSupplier.get()))
+                                .flatMap(item ->
+                                        itemCacheService.put(id, item)
+                                                .thenReturn(item)
+                                )
+                ));
     }
 }

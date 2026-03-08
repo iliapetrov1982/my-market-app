@@ -15,6 +15,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.r2dbc.core.DatabaseClient;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -22,6 +24,8 @@ import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.notNullValue;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.when;
 
 class BuyServiceIntegrationTest extends MyMarketAppApplicationTests {
 
@@ -43,9 +47,14 @@ class BuyServiceIntegrationTest extends MyMarketAppApplicationTests {
     @Autowired
     private DatabaseClient db;
 
+    @MockitoBean
+    private PaymentsGateway paymentsGateway;
+
     @BeforeEach
     void cleanState() {
-        // FK: order_items -> orders, поэтому сначала чистим order_items
+        when(paymentsGateway.charge(anyLong()))
+                .thenReturn(Mono.just(true));
+
         db.sql("delete from order_items").then().block();
         db.sql("delete from orders").then().block();
         cartItemRepository.deleteAll().block();
@@ -75,7 +84,6 @@ class BuyServiceIntegrationTest extends MyMarketAppApplicationTests {
 
     @Test
     void buy_whenCartHasItems_createsOrderAndOrderItems_clearsCart_totalSumIsCorrect() {
-        // arrange: берём 2 товара из seed
         List<Item> items = itemRepository.findAll()
                 .take(2)
                 .collectList()
@@ -90,8 +98,6 @@ class BuyServiceIntegrationTest extends MyMarketAppApplicationTests {
         int q1 = 2;
         int q2 = 3;
 
-        // ВАЖНО: CartItem implements Persistable, и обычный new CartItem(...) имеет isNew=false,
-        // поэтому Spring Data делает UPDATE вместо INSERT.
         cartItemRepository.saveAll(List.of(
                 CartItem.newRow(i1.getId(), q1),
                 CartItem.newRow(i2.getId(), q2)
@@ -102,22 +108,18 @@ class BuyServiceIntegrationTest extends MyMarketAppApplicationTests {
 
         long expectedTotal = i1.getPrice() * (long) q1 + i2.getPrice() * (long) q2;
 
-        // act
         Long orderId = buyService.buy().block();
         assertThat(orderId, notNullValue());
 
-        // assert: корзина очищена
         Long cartAfter = cartItemRepository.count().block();
         assertThat("После buy() корзина должна быть очищена", cartAfter, is(0L));
 
-        // assert: заказ существует
         Order order = orderRepository.findById(orderId).block();
         assertThat(order, notNullValue());
         assertThat(order.getId(), equalTo(orderId));
         assertThat(order.getCreatedAt(), notNullValue());
         assertThat(order.getTotalSum(), equalTo(expectedTotal));
 
-        // assert: позиции заказа (через кастомный репозиторий)
         List<OrderItem> orderItems = orderItemRepository.findAllByOrderId(orderId)
                 .collectList()
                 .block();
@@ -125,7 +127,6 @@ class BuyServiceIntegrationTest extends MyMarketAppApplicationTests {
         assertThat(orderItems, notNullValue());
         assertThat("Должно быть 2 позиции заказа", orderItems.size(), is(2));
 
-        // стабильность: сортируем по itemId
         List<OrderItem> sorted = orderItems.stream()
                 .sorted(Comparator.comparing(OrderItem::getItemId))
                 .toList();
@@ -152,7 +153,6 @@ class BuyServiceIntegrationTest extends MyMarketAppApplicationTests {
         assertThat(oi2.getId().getOrderId(), equalTo(orderId));
         assertThat(oi2.getId().getItemId(), equalTo(i2.getId()));
     }
-
 
     @Test
     void buy_createsNewOrderEachTime() {
@@ -182,5 +182,52 @@ class BuyServiceIntegrationTest extends MyMarketAppApplicationTests {
                 .one()
                 .block();
         assertThat("Должно быть 2 строки в order_items", orderItemsCount, is(2L));
+    }
+
+    @Test
+    void buy_whenPaymentFails_shouldNotCreateOrderAndNotClearCart() {
+        when(paymentsGateway.charge(anyLong()))
+                .thenReturn(Mono.just(false));
+
+        List<Item> items = itemRepository.findAll()
+                .take(2)
+                .collectList()
+                .block();
+
+        assertThat(items, notNullValue());
+        assertThat(items.size(), is(2));
+
+        Item i1 = items.get(0);
+        Item i2 = items.get(1);
+
+        int q1 = 1;
+        int q2 = 2;
+
+        cartItemRepository.saveAll(List.of(
+                CartItem.newRow(i1.getId(), q1),
+                CartItem.newRow(i2.getId(), q2)
+        )).then().block();
+
+        Long cartBefore = cartItemRepository.count().block();
+        assertThat(cartBefore, is(2L));
+
+        StepVerifier.create(buyService.buy())
+                .expectErrorMatches(ex ->
+                        ex instanceof IllegalStateException
+                        && "Payment failed".equals(ex.getMessage())
+                )
+                .verify();
+
+        Long ordersCount = orderRepository.count().block();
+        assertThat("Заказ не должен создаваться при неуспешной оплате", ordersCount, is(0L));
+
+        Long cartAfter = cartItemRepository.count().block();
+        assertThat("Корзина не должна очищаться при неуспешной оплате", cartAfter, is(2L));
+
+        Long orderItemsCount = db.sql("select count(*) as c from order_items")
+                .map((row, meta) -> row.get("c", Long.class))
+                .one()
+                .block();
+        assertThat("Позиции заказа не должны создаваться при неуспешной оплате", orderItemsCount, is(0L));
     }
 }

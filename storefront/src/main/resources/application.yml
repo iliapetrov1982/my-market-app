@@ -27,9 +27,10 @@ app:
   cache:
     item-ttl: ${APP_CACHE_ITEM_TTL:PT10M}
 
+payments:
+  base-url: ${PAYMENTS_BASE_URL:http://localhost:8081}
+
 logging:
   level:
     liquibase: INFO
     org.springframework.r2dbc: INFO
-
-

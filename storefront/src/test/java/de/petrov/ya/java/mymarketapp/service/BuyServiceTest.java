@@ -28,11 +28,11 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 class BuyServiceTest {
 
-    // --- зависимости BuyService ---
     private CartItemRepository cartItemRepository;
     private ItemRepository itemRepository;
     private OrderRepository orderRepository;
     private OrderItemRepository orderItemRepository;
+    private PaymentsGateway paymentsGateway;
     private TransactionalOperator tx;
 
     private BuyService buyService;
@@ -43,17 +43,9 @@ class BuyServiceTest {
         itemRepository = mock(ItemRepository.class);
         orderRepository = mock(OrderRepository.class);
         orderItemRepository = mock(OrderItemRepository.class);
+        paymentsGateway = mock(PaymentsGateway.class);
         tx = mock(TransactionalOperator.class);
 
-        /*
-         * BuyService.buy() оборачивает бизнес-логику в:
-         *     tx.transactional(mono)
-         *
-         * Нам НЕ нужно реально тестировать транзакции.
-         * Поэтому мы просто возвращаем переданный Mono как есть.
-         *
-         * То есть transactional(...) в тесте — это "no-op".
-         */
         when(tx.transactional(any(Mono.class)))
                 .thenAnswer(inv -> inv.getArgument(0));
 
@@ -62,20 +54,15 @@ class BuyServiceTest {
                 itemRepository,
                 orderRepository,
                 orderItemRepository,
+                paymentsGateway,
                 tx
         );
     }
 
-    // ================================================================
-    // ПУСТАЯ КОРЗИНА
-    // ================================================================
     @Test
     void buy_whenCartIsEmpty_shouldFail_andNotTouchDb() {
-
-        // Корзина пустая
         when(cartItemRepository.findAll()).thenReturn(Flux.empty());
 
-        // Проверяем что buy() завершается ошибкой
         StepVerifier.create(buyService.buy())
                 .expectErrorMatches(ex ->
                         ex instanceof IllegalStateException
@@ -83,30 +70,21 @@ class BuyServiceTest {
                 )
                 .verify();
 
-        // Проверяем что дальше БД вообще не трогалась
         verify(cartItemRepository, times(1)).findAll();
         verify(itemRepository, never()).findAllById(anyIterable());
         verify(orderRepository, never()).save(any(Order.class));
         verify(orderItemRepository, never()).saveAll(any());
         verify(cartItemRepository, never()).deleteAll();
+        verifyNoInteractions(paymentsGateway);
         verify(tx, times(1)).transactional(any(Mono.class));
     }
 
-    // ================================================================
-    // HAPPY PATH
-    // ================================================================
     @Test
     void buy_happyPath_shouldCreateOrderItems_updateTotal_clearCart_andReturnOrderId() {
-        // ------------------------------------------------------------
-        // 1) Cart
-        // ------------------------------------------------------------
-        CartItem ci1 = new CartItem(1L, 2); // 2 * 100
-        CartItem ci2 = new CartItem(2L, 1); // 1 * 50
+        CartItem ci1 = new CartItem(1L, 2);
+        CartItem ci2 = new CartItem(2L, 1);
         when(cartItemRepository.findAll()).thenReturn(Flux.just(ci1, ci2));
 
-        // ------------------------------------------------------------
-        // 2) Items (as from DB)
-        // ------------------------------------------------------------
         Item item1 = new Item("Apple", "d1", "img1", 100L);
         item1.setId(1L);
 
@@ -116,9 +94,9 @@ class BuyServiceTest {
         when(itemRepository.findAllById(anyIterable()))
                 .thenReturn(Flux.just(item1, item2));
 
-        // ------------------------------------------------------------
-        // 3) Capture OrderItems passed to saveAll (reactive, no block)
-        // ------------------------------------------------------------
+        long expectedTotal = 100L * 2 + 50L;
+        when(paymentsGateway.charge(expectedTotal)).thenReturn(Mono.just(true));
+
         java.util.List<OrderItem> capturedOrderItems =
                 new java.util.concurrent.CopyOnWriteArrayList<>();
 
@@ -128,41 +106,30 @@ class BuyServiceTest {
 
             return Flux.from(pub)
                     .doOnNext(capturedOrderItems::add)
-                    .thenMany(Flux.empty()); // emulate successful saveAll
+                    .thenMany(Flux.empty());
         }).when(orderItemRepository).saveAll(any());
 
-        // ------------------------------------------------------------
-        // 4) Capture Order passed to save()
-        // ------------------------------------------------------------
         java.util.concurrent.atomic.AtomicReference<Order> savedOrderRef =
                 new java.util.concurrent.atomic.AtomicReference<>();
 
         when(orderRepository.save(any(Order.class))).thenAnswer(inv -> {
             Order arg = inv.getArgument(0);
 
-            // snapshot-by-copy (so later mutations won't affect assertions)
             Order snap = new Order(arg.getId());
             snap.setCreatedAt(arg.getCreatedAt());
             snap.setTotalSum(arg.getTotalSum());
             savedOrderRef.set(snap);
 
-            // emulate DB generating ID
             arg.setId(42L);
             return Mono.just(arg);
         });
 
         when(cartItemRepository.deleteAll()).thenReturn(Mono.empty());
 
-        // ------------------------------------------------------------
-        // 5) Run
-        // ------------------------------------------------------------
         StepVerifier.create(buyService.buy())
                 .expectNext(42L)
                 .verifyComplete();
 
-        // ------------------------------------------------------------
-        // 6) Assert order items created correctly
-        // ------------------------------------------------------------
         assertThat(capturedOrderItems).hasSize(2);
 
         OrderItem oi1 = capturedOrderItems.stream()
@@ -185,25 +152,54 @@ class BuyServiceTest {
         assertThat(oi2.getPrice()).isEqualTo(50L);
         assertThat(oi2.getQuantity()).isEqualTo(1);
 
-        // ------------------------------------------------------------
-        // 7) Assert saved Order contains computed total + createdAt
-        // ------------------------------------------------------------
-        long expectedTotal = 100L * 2 + 50L * 1; // 250
-
         Order savedOrder = savedOrderRef.get();
         assertThat(savedOrder).isNotNull();
         assertThat(savedOrder.getTotalSum()).isEqualTo(expectedTotal);
         assertThat(savedOrder.getCreatedAt()).isNotNull();
         assertThat(savedOrder.getCreatedAt()).isBeforeOrEqualTo(OffsetDateTime.now());
 
-        // ------------------------------------------------------------
-        // 8) Verify interactions
-        // ------------------------------------------------------------
         verify(cartItemRepository, times(1)).findAll();
         verify(itemRepository, times(1)).findAllById(anyIterable());
-        verify(orderRepository, times(1)).save(any(Order.class));     // <--- теперь ожидаем 1 раз
+        verify(paymentsGateway, times(1)).charge(expectedTotal);
+        verify(orderRepository, times(1)).save(any(Order.class));
         verify(orderItemRepository, times(1)).saveAll(any());
         verify(cartItemRepository, times(1)).deleteAll();
+        verify(tx, times(1)).transactional(any(Mono.class));
+    }
+
+    @Test
+    void buy_whenPaymentFails_shouldNotCreateOrderAndNotClearCart() {
+        CartItem ci1 = new CartItem(1L, 2);
+        CartItem ci2 = new CartItem(2L, 1);
+        when(cartItemRepository.findAll()).thenReturn(Flux.just(ci1, ci2));
+
+        Item item1 = new Item("Apple", "d1", "img1", 100L);
+        item1.setId(1L);
+
+        Item item2 = new Item("Banana", "d2", "img2", 50L);
+        item2.setId(2L);
+
+        when(itemRepository.findAllById(anyIterable()))
+                .thenReturn(Flux.just(item1, item2));
+
+        long expectedTotal = 100L * 2 + 50L;
+        when(paymentsGateway.charge(expectedTotal)).thenReturn(Mono.just(false));
+
+        StepVerifier.create(buyService.buy())
+                .expectErrorMatches(ex ->
+                        ex instanceof IllegalStateException
+                        && "Payment failed".equals(ex.getMessage())
+                )
+                .verify();
+
+        verify(cartItemRepository, times(1)).findAll();
+        verify(itemRepository, times(1)).findAllById(anyIterable());
+        verify(paymentsGateway, times(1)).charge(expectedTotal);
+
+        verify(orderRepository, never()).save(any(Order.class));
+        verify(orderItemRepository, never()).saveAll(any());
+        verify(cartItemRepository, never()).deleteAll();
+
         verify(tx, times(1)).transactional(any(Mono.class));
     }
 }

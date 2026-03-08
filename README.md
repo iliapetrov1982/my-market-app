@@ -1,34 +1,112 @@
-# 🛒 My Market App (Reactive, WebFlux + R2DBC)
+# 🛒 My Market App (Reactive, WebFlux + R2DBC + Payments Service)
 
-Spring Boot приложение — витрина интернет-магазина с корзиной и заказами.
+Reactive интернет-магазин на **Spring Boot 4**, реализующий витрину товаров, корзину и оформление заказов
+с проверкой баланса через отдельный **payments-service**.
 
-Проект полностью переведён на **реактивный стек**:
-- Spring WebFlux (контроллеры возвращают `Mono<String>`)
-- Spring Data R2DBC (без JPA / JDBC)
-- PostgreSQL 16
-- Liquibase
-- TransactionalOperator для реактивных транзакций
-- Thymeleaf (server-side rendering)
+Проект полностью использует **реактивный стек**:
+
+* Spring WebFlux
+* Spring Data R2DBC
+* PostgreSQL
+* Redis
+* Liquibase
+* OpenAPI (client + server)
+* Docker Compose
 
 ---
 
 # 🚀 Технологический стек
 
 ## Runtime
-- Java 21
-- Spring Boot 4.0.2
-- Spring WebFlux
-- Spring Data R2DBC
-- Thymeleaf
-- PostgreSQL 16
-- Liquibase
-- Gradle
 
-## Тестирование
-- JUnit 5
-- Mockito
-- Hamcrest
-- Testcontainers (PostgreSQL)
+* **Java 21**
+* **Spring Boot 4.0.2**
+* Spring WebFlux
+* Spring Data R2DBC
+* Spring Data Redis Reactive
+* Thymeleaf
+* PostgreSQL 16
+* Redis 7
+* Liquibase
+* OpenAPI Generator
+* Gradle
+
+---
+
+# 🧩 Архитектура
+
+Проект состоит из **двух сервисов**:
+
+```
+my-market-app
+ ├─ storefront
+ │   ├─ Web UI
+ │   ├─ корзина
+ │   ├─ оформление заказов
+ │   └─ клиент payments API
+ │
+ └─ payments
+     └─ сервис списания средств
+```
+
+---
+
+# 💳 Payments Service
+
+Отдельный сервис, отвечающий за баланс.
+
+API:
+
+```
+GET  /api/payments/balance
+POST /api/payments/charge
+```
+
+Пример ответа:
+
+```
+{
+  "amount": 100000
+}
+```
+
+Списание средств:
+
+```
+{
+  "success": true,
+  "remainingAmount": 95000,
+  "message": "OK"
+}
+```
+
+---
+
+# 📡 OpenAPI
+
+Контракт платежного сервиса описан в:
+
+```
+openapi/payments-api.yaml
+```
+
+Код клиента генерируется автоматически:
+
+```
+./gradlew openApiGenerate
+```
+
+Используется библиотека:
+
+```
+webclient
+```
+
+Сгенерированный код:
+
+```
+build/generated/openapi/payments-client
+```
 
 ---
 
@@ -36,178 +114,259 @@ Spring Boot приложение — витрина интернет-магаз�
 
 Liquibase автоматически применяет миграции при старте приложения.
 
-### Основные таблицы:
-- `items`
-- `cart_items`
-- `orders`
-- `order_items`
+Основные таблицы:
 
-### Миграции:
-- `001-init-schema.yaml`
-- `002-seed-items.yaml`
+```
+items
+cart_items
+orders
+order_items
+```
 
-Seed-данные:
-- применяются автоматически
-- используются в интеграционных тестах
-- не мокируются
+Миграции:
+
+```
+001-init-schema.yaml
+002-seed-items.yaml
+```
+
+Seed-данные используются:
+
+* в приложении
+* в интеграционных тестах
 
 ---
 
-# ▶️ Запуск приложения
+# ⚡ Redis
 
-## 1️⃣ Поднять PostgreSQL
+Redis используется как **кеш витрины товаров**.
 
-```bash
-docker compose up -d
+Настройки:
+
+```
+spring.data.redis.host
+spring.data.redis.port
 ```
 
-## 2️⃣ Запустить приложение
+TTL кеша:
 
-```bash
-./gradlew bootRun
+```
+app.cache.item-ttl
 ```
 
-После старта:
+---
+
+# 🐳 Docker
+
+Система запускается через **docker compose**.
+
+Сервисы:
+
+```
+storefront   -> http://localhost:8080
+payments     -> http://localhost:8081
+postgres
+redis
+```
+
+Запуск всей системы:
+
+```
+docker compose up --build
+```
+
+---
+
+# ▶️ Локальный запуск storefront
+
+Если нужно запустить storefront отдельно.
+
+Поднять зависимости:
+
+```
+docker compose up -d postgres redis payments
+```
+
+Запустить приложение:
+
+```
+./gradlew :storefront:bootRun
+```
+
+После запуска:
 
 ```
 http://localhost:8080
 ```
 
-Liquibase применится автоматически.
-
----
-
-# 🧪 Запуск тестов
-
-## Все тесты
-
-```bash
-./gradlew test
-```
-
-## Один конкретный тест
-
-```bash
-./gradlew test --tests "de.petrov.ya.java.mymarketapp.service.ItemsServiceTest"
-```
-
-## С логами
-
-```bash
-./gradlew test --info
-```
-
----
-
-# 🧪 Как устроены тесты
-
-### Интеграционные
-- Testcontainers (PostgreSQL)
-- @ServiceConnection
-- Liquibase применяется автоматически
-
-### Сервисные
-- Mockito
-- проверка бизнес-логики
-- проверка транзакций
-- проверка реактивных цепочек (Mono / Flux)
-
-### Контроллеры
-- WebFlux
-- POST формы через `exchange.getFormData()`
-
 ---
 
 # 🌐 Основные страницы
 
-- `/` или `/items` — витрина
-- `/items/{id}` — карточка товара
-- `/cart/items` — корзина
-- `/orders` — список заказов
-- `/orders/{id}` — детали заказа
+```
+/items          витрина товаров
+/items/{id}     карточка товара
+
+/cart/items     корзина
+
+/orders         список заказов
+/orders/{id}    детали заказа
+```
 
 ---
 
-# 🔎 Проверка работы через curl
+# 🛍️ Оформление заказа
+
+Алгоритм `BuyService`:
+
+```
+1. читается корзина
+2. вычисляется сумма заказа
+3. запрашивается баланс payments
+4. выполняется charge
+5. создаётся Order
+6. создаются OrderItem
+7. корзина очищается
+```
+
+Транзакция реализована через:
+
+```
+TransactionalOperator
+```
+
+---
+
+# 🧪 Тестирование
+
+## Используемые инструменты
+
+* JUnit 5
+* Mockito
+* Hamcrest
+* Reactor Test
+* Testcontainers (PostgreSQL)
+
+---
+
+## Запуск тестов
+
+Все тесты:
+
+```
+./gradlew test
+```
+
+Один тест:
+
+```
+./gradlew test --tests "*BuyServiceTest"
+```
+
+---
+
+# 🧪 Типы тестов
+
+### Unit tests
+
+Тестируются:
+
+* сервисы
+* бизнес-логика
+* реактивные цепочки
+
+Используется:
+
+```
+Mockito
+```
+
+---
+
+### Integration tests
+
+Используется:
+
+```
+Testcontainers
+```
+
+Поднимается контейнер:
+
+```
+PostgreSQL
+```
+
+Liquibase применяется автоматически.
+
+---
+
+### Web tests
+
+Используется:
+
+```
+@WebFluxTest
+```
+
+---
+
+# 🔎 Проверка через curl
 
 ## Витрина
 
-```bash
-curl -i "http://localhost:8080/items"
+```
+curl http://localhost:8080/items
 ```
 
 Поиск:
 
-```bash
-curl -i "http://localhost:8080/items?search=cap"
+```
+curl "http://localhost:8080/items?search=cap"
 ```
 
 Сортировка:
 
-```bash
-curl -i "http://localhost:8080/items?sort=PRICE"
+```
+curl "http://localhost:8080/items?sort=PRICE"
 ```
 
 Пагинация:
 
-```bash
-curl -i "http://localhost:8080/items?pageNumber=2&pageSize=10"
+```
+curl "http://localhost:8080/items?pageNumber=2&pageSize=10"
 ```
 
 ---
 
 ## Добавить товар в корзину
 
-```bash
-curl -i -X POST "http://localhost:8080/items" \
-  -H "Content-Type: application/x-www-form-urlencoded" \
-  --data "id=2&action=PLUS&search=&sort=NO&pageNumber=1&pageSize=5"
 ```
-
-Уменьшить:
-
-```bash
-curl -i -X POST "http://localhost:8080/items" \
+curl -X POST "http://localhost:8080/items" \
   -H "Content-Type: application/x-www-form-urlencoded" \
-  --data "id=2&action=MINUS&search=&sort=NO&pageNumber=1&pageSize=5"
-```
-
----
-
-## Карточка товара
-
-```bash
-curl -i "http://localhost:8080/items/2"
-```
-
-Из карточки:
-
-```bash
-curl -i -X POST "http://localhost:8080/items/2" \
-  -H "Content-Type: application/x-www-form-urlencoded" \
-  --data "action=PLUS"
+  --data "id=2&action=PLUS"
 ```
 
 ---
 
 ## Корзина
 
-```bash
-curl -i "http://localhost:8080/cart/items"
+```
+curl http://localhost:8080/cart/items
 ```
 
-Изменить корзину:
+Изменить количество:
 
-```bash
-curl -i -X POST "http://localhost:8080/cart/items" \
+```
+curl -X POST "http://localhost:8080/cart/items" \
   -H "Content-Type: application/x-www-form-urlencoded" \
   --data "id=2&action=PLUS"
 ```
 
-Удалить:
+Удалить товар:
 
-```bash
-curl -i -X POST "http://localhost:8080/cart/items" \
+```
+curl -X POST "http://localhost:8080/cart/items" \
   -H "Content-Type: application/x-www-form-urlencoded" \
   --data "id=2&action=DELETE"
 ```
@@ -216,57 +375,56 @@ curl -i -X POST "http://localhost:8080/cart/items" \
 
 ## Оформить заказ
 
-```bash
-curl -i -X POST "http://localhost:8080/buy"
+```
+curl -X POST http://localhost:8080/buy
 ```
 
 ---
 
 ## Список заказов
 
-```bash
-curl -i "http://localhost:8080/orders"
+```
+curl http://localhost:8080/orders
 ```
 
 Детали заказа:
 
-```bash
-curl -i "http://localhost:8080/orders/1"
+```
+curl http://localhost:8080/orders/1
 ```
 
 ---
 
-# 🔁 Архитектура
+# 📦 Структура проекта
 
-## Контроллеры
-- WebFlux
-- возвращают `Mono<String>`
-- POST формы читаются через `exchange.getFormData()`
-
-## Репозитории
-- R2DBC
-- SQL через `DatabaseClient`
-- limit/offset для пагинации
-- сортировка в SQL
-
-## BuyService
-- транзакция через `TransactionalOperator`
-- создаётся `Order`
-- сохраняются `OrderItem`
-- очищается корзина
-- всё реактивно
+```
+my-market-app
+ ├─ storefront
+ │   ├─ controller
+ │   ├─ service
+ │   ├─ repository
+ │   ├─ config
+ │   └─ templates
+ │
+ ├─ payments
+ │   └─ REST API для баланса
+ │
+ ├─ openapi
+ │   └─ payments-api.yaml
+ │
+ └─ docker-compose.yaml
+```
 
 ---
 
-# 🐳 Docker
+# 🎯 Особенности проекта
 
-PostgreSQL:
-- image: `postgres:16`
-- database: `my-market-app`
-- user: `my_market_user`
-- password: `my_market_pass`
+* полностью **reactive стек**
+* **R2DBC вместо JPA**
+* **OpenAPI-generated client**
+* **отдельный payments-service**
+* **Redis cache**
+* **Testcontainers**
+* **Docker Compose окружение**
 
-Приложение:
-- Java 21
-- порт 8080
-- Liquibase применяется автоматически
+---

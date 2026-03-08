@@ -3,45 +3,77 @@
 <head>
     <meta charset="utf-8">
     <title>Корзина</title>
+
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css"
           rel="stylesheet"
           integrity="sha384-sRIl4kxILFvY47J16cr9ZwB07vP4J8+LH7qKQnuqkuIAvNWLzeN8tE5YBujZqJLB"
           crossorigin="anonymous">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css">
+
+    <link rel="stylesheet"
+          href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css">
 </head>
 
 <body class="bg-light">
+
 <div class="container p-2">
 
     <!-- Header -->
     <div class="row p-2">
         <div class="col">
             <div class="hstack gap-3">
+
                 <h2 class="m-0">
                     <span class="badge text-bg-success">Корзина</span>
                 </h2>
 
-                <a href="/orders" class="btn btn-secondary ms-auto bi bi-file-earmark-text"> Заказы</a>
-                <a href="/items" class="btn btn-secondary bi bi-arrow-left-square"> Главная</a>
+                <a href="/orders"
+                   class="btn btn-secondary ms-auto bi bi-file-earmark-text">
+                    Заказы
+                </a>
+
+                <a href="/items"
+                   class="btn btn-secondary bi bi-arrow-left-square">
+                    Главная
+                </a>
+
             </div>
         </div>
     </div>
 
-    <!-- Empty -->
+
+    <!-- Error message -->
+    <div class="row p-2" th:if="${errorMessage != null}">
+        <div class="col">
+            <div class="alert alert-danger m-0"
+                 th:text="${errorMessage}">
+                Ошибка
+            </div>
+        </div>
+    </div>
+
+
+    <!-- Empty cart -->
     <div class="row p-2" th:if="${#lists.isEmpty(items)}">
         <div class="col">
             <div class="alert alert-info m-0">
-                Корзина пуста. <a href="/items">Перейти к товарам</a>
+                Корзина пуста.
+                <a href="/items">Перейти к товарам</a>
             </div>
         </div>
     </div>
 
-    <!-- Items -->
-    <div class="row p-2" th:each="item : ${items}" th:if="${not #lists.isEmpty(items)}">
+
+    <!-- Cart items -->
+    <div class="row p-2"
+         th:each="item : ${items}"
+         th:if="${not #lists.isEmpty(items)}">
+
         <div class="col">
             <div class="card">
+
                 <div class="row g-0 align-items-center">
 
+                    <!-- Image -->
                     <div class="col-md-4 p-2">
                         <a th:href="${'/items/' + item.id()}">
                             <img th:src="@{${item.imgPath()}}"
@@ -50,33 +82,50 @@
                         </a>
                     </div>
 
+
+                    <!-- Info -->
                     <div class="col-md-8">
                         <div class="card-body">
-                            <h5 class="card-title" th:text="${item.title()}"></h5>
+
+                            <h5 class="card-title"
+                                th:text="${item.title()}"></h5>
 
                             <h5 class="mb-3">
                                 <span class="badge text-bg-success"
-                                      th:text="${item.price()} + ' руб.'"></span>
+                                      th:text="${item.price()} + ' руб.'">
+                                </span>
                             </h5>
 
-                            <p class="card-text" th:text="${item.description()}"></p>
+                            <p class="card-text"
+                               th:text="${item.description()}"></p>
 
-                            <!-- ВАЖНО: отдельная форма на карточку -->
-                            <form method="post" action="/cart/items">
+
+                            <!-- Cart actions -->
+                            <form method="post"
+                                  action="/cart/items">
+
                                 <div class="hstack gap-3">
-                                    <input type="hidden" name="id" th:value="${item.id()}"/>
+
+                                    <input type="hidden"
+                                           name="id"
+                                           th:value="${item.id()}"/>
 
                                     <button type="submit"
                                             class="btn btn-outline-secondary"
                                             name="action"
-                                            value="MINUS">-</button>
+                                            value="MINUS">
+                                        -
+                                    </button>
 
-                                    <span class="fs-5" th:text="${item.count()}">0</span>
+                                    <span class="fs-5"
+                                          th:text="${item.count()}">0</span>
 
                                     <button type="submit"
                                             class="btn btn-outline-secondary"
                                             name="action"
-                                            value="PLUS">+</button>
+                                            value="PLUS">
+                                        +
+                                    </button>
 
                                     <button type="submit"
                                             class="btn btn-danger ms-auto bi bi-trash"
@@ -84,47 +133,99 @@
                                             value="DELETE"
                                             title="Удалить">
                                     </button>
+
                                 </div>
+
                             </form>
 
                         </div>
                     </div>
 
                 </div>
+
             </div>
         </div>
+
     </div>
 
-    <!-- Footer: total + buy (строго НЕ внутри формы /cart/items) -->
-    <div class="row p-2" th:if="${not #lists.isEmpty(items)}">
+
+    <!-- Footer: total + balance + buy -->
+    <div class="row p-2"
+         th:if="${not #lists.isEmpty(items)}">
+
         <div class="col">
             <div class="card">
+
                 <div class="card-body">
-                    <div class="hstack gap-3">
-                        <div class="fs-5">
-                            <span class="text-muted">Итого:</span>
-                            <strong th:text="${total} + ' руб.'">0 руб.</strong>
+
+                    <div class="vstack gap-3">
+
+                        <!-- Total + Balance -->
+                        <div class="hstack gap-4">
+
+                            <div class="fs-5">
+                                <span class="text-muted">Итого:</span>
+
+                                <strong th:text="${total} + ' руб.'">
+                                    0 руб.
+                                </strong>
+                            </div>
+
+
+                            <div class="fs-5 ms-auto">
+                                <span class="text-muted">Баланс:</span>
+
+                                <strong th:text="${balance} + ' руб.'"
+                                        th:classappend="${balance < total} ? 'text-danger' : 'text-success'">
+                                    0 руб.
+                                </strong>
+                            </div>
+
                         </div>
 
-                        <form method="post" action="/buy" class="ms-auto">
-                            <button type="submit" class="btn btn-success bi bi-bag-check">
+
+                        <!-- Not enough money -->
+                        <div th:if="${balance < total}"
+                             class="alert alert-warning m-0">
+
+                            Недостаточно средств для оформления заказа.
+                        </div>
+
+
+                        <!-- Buy -->
+                        <form method="post"
+                              action="/buy"
+                              class="ms-auto">
+
+                            <button type="submit"
+                                    class="btn btn-success bi bi-bag-check"
+                                    th:disabled="${balance < total}">
+
                                 Заказать
+
                             </button>
+
                         </form>
 
                     </div>
+
                 </div>
+
             </div>
         </div>
+
     </div>
 
 </div>
 
+
 <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.11.8/dist/umd/popper.min.js"
         integrity="sha384-I7E8VVD/ismYTF4hNIPjVp/Zjvgyol6VFvRkX/vR+Vc4jQkC+hVqc2pM8ODewa9r"
         crossorigin="anonymous"></script>
+
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.min.js"
         integrity="sha384-G/EV+4j2dNv+tEPo3++6LCgdCROaejBqfUeNjuKAiuXbjrxilcCdDz6ZAVfHWe1Y"
         crossorigin="anonymous"></script>
+
 </body>
 </html>

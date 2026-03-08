@@ -1,0 +1,69 @@
+plugins {
+    id 'java'
+    id 'org.springframework.boot'
+    id 'io.spring.dependency-management'
+    id 'org.openapi.generator'
+}
+
+description = 'payments'
+
+configurations {
+    compileOnly {
+        extendsFrom annotationProcessor
+    }
+}
+
+def generatedPaymentsServerDir = layout.buildDirectory.dir("generated/openapi/payments-server")
+
+sourceSets {
+    main {
+        java {
+            srcDir generatedPaymentsServerDir.map { it.dir("src/main/java") }
+        }
+    }
+}
+
+dependencies {
+    implementation 'org.springframework.boot:spring-boot-starter-webflux'
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
+
+    compileOnly 'org.projectlombok:lombok'
+    annotationProcessor 'org.projectlombok:lombok'
+
+    testImplementation 'org.springframework.boot:spring-boot-starter-webflux-test'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+openApiGenerate {
+    generatorName.set("spring")
+    inputSpec.set("$rootDir/openapi/payments-api.yaml")
+    outputDir.set(generatedPaymentsServerDir.get().asFile.absolutePath)
+
+    apiPackage.set("de.petrov.ya.java.payments.api")
+    modelPackage.set("de.petrov.ya.java.payments.model")
+    invokerPackage.set("de.petrov.ya.java.payments.invoker")
+
+    globalProperties.set([
+            apis           : "",
+            models         : "",
+            supportingFiles: ""
+    ])
+
+    configOptions.set([
+            library            : "spring-boot",
+            reactive           : "true",
+            interfaceOnly      : "true",
+            requestMappingMode : "api_interface",
+            useResponseEntity  : "true",
+            useSpringBoot4     : "true",
+            useBeanValidation  : "true",
+            openApiNullable    : "false",
+            documentationProvider: "none"
+    ])
+
+    validateSpec.set(true)
+}
+
+tasks.named("compileJava") {
+    dependsOn tasks.named("openApiGenerate")
+}
