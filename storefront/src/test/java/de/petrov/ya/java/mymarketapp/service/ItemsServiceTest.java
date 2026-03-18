@@ -12,6 +12,8 @@ import org.mockito.Captor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.ReactiveSecurityContextHolder;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
@@ -22,26 +24,27 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.is;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class ItemsServiceTest {
 
-    @Mock
-    ItemQueryRepository itemQueryRepository;
+    private static final String USERNAME = "user1";
 
-    @Mock
-    ItemCacheService itemCacheService;
+    @Mock ItemQueryRepository itemQueryRepository;
+    @Mock ItemCacheService itemCacheService;
+    @InjectMocks ItemsService itemsService;
 
-    @InjectMocks
-    ItemsService itemsService;
+    @Captor ArgumentCaptor<Integer> limitCaptor;
+    @Captor ArgumentCaptor<Integer> offsetCaptor;
 
-    @Captor
-    ArgumentCaptor<Integer> limitCaptor;
-
-    @Captor
-    ArgumentCaptor<Integer> offsetCaptor;
+    private <T> Mono<T> withUser(Mono<T> mono) {
+        var auth = UsernamePasswordAuthenticationToken
+                .authenticated(USERNAME, null, List.of());
+        return mono.contextWrite(ReactiveSecurityContextHolder.withAuthentication(auth));
+    }
 
     private static ItemDto dto(long id, String title, long price, int count) {
         return new ItemDto(id, title, "desc-" + id, "/images/" + id + ".png", price, count);
@@ -56,15 +59,16 @@ class ItemsServiceTest {
                 dto(4, "D", 400, 0)
         );
 
-        when(itemQueryRepository.findShowcase(eq(""), eq(ItemsSort.NO), anyInt(), anyInt()))
+        when(itemQueryRepository.findShowcase(eq(""), eq(ItemsSort.NO), anyInt(), anyInt(), anyString()))
                 .thenReturn(Flux.fromIterable(content));
         when(itemQueryRepository.countShowcase(eq("")))
                 .thenReturn(Mono.just(4L));
 
-        StepVerifier.create(itemsService.getItemsPage("   ", ItemsSort.NO, 0, 999))
+        StepVerifier.create(withUser(itemsService.getItemsPage("   ", ItemsSort.NO, 0, 999)))
                 .assertNext(page -> {
                     verify(itemQueryRepository)
-                            .findShowcase(eq(""), eq(ItemsSort.NO), limitCaptor.capture(), offsetCaptor.capture());
+                            .findShowcase(eq(""), eq(ItemsSort.NO),
+                                    limitCaptor.capture(), offsetCaptor.capture(), eq(USERNAME));
 
                     assertThat(limitCaptor.getValue(), equalTo(5));
                     assertThat(offsetCaptor.getValue(), equalTo(0));
@@ -97,16 +101,16 @@ class ItemsServiceTest {
 
     @Test
     void getItemsPage_passesSort_ALPHA_toSql() {
-        when(itemQueryRepository.findShowcase(eq("x"), eq(ItemsSort.ALPHA), anyInt(), anyInt()))
+        when(itemQueryRepository.findShowcase(eq("x"), eq(ItemsSort.ALPHA), anyInt(), anyInt(), anyString()))
                 .thenReturn(Flux.just(dto(1, "A", 100, 0)));
         when(itemQueryRepository.countShowcase(eq("x")))
                 .thenReturn(Mono.just(1L));
 
-        StepVerifier.create(itemsService.getItemsPage("x", ItemsSort.ALPHA, 1, 5))
+        StepVerifier.create(withUser(itemsService.getItemsPage("x", ItemsSort.ALPHA, 1, 5)))
                 .expectNextCount(1)
                 .verifyComplete();
 
-        verify(itemQueryRepository).findShowcase(eq("x"), eq(ItemsSort.ALPHA), eq(5), eq(0));
+        verify(itemQueryRepository).findShowcase(eq("x"), eq(ItemsSort.ALPHA), eq(5), eq(0), eq(USERNAME));
         verify(itemQueryRepository).countShowcase(eq("x"));
         verifyNoMoreInteractions(itemQueryRepository);
         verifyNoInteractions(itemCacheService);
@@ -114,16 +118,16 @@ class ItemsServiceTest {
 
     @Test
     void getItemsPage_passesSort_PRICE_toSql() {
-        when(itemQueryRepository.findShowcase(eq("x"), eq(ItemsSort.PRICE), anyInt(), anyInt()))
+        when(itemQueryRepository.findShowcase(eq("x"), eq(ItemsSort.PRICE), anyInt(), anyInt(), anyString()))
                 .thenReturn(Flux.just(dto(1, "A", 100, 0)));
         when(itemQueryRepository.countShowcase(eq("x")))
                 .thenReturn(Mono.just(1L));
 
-        StepVerifier.create(itemsService.getItemsPage("x", ItemsSort.PRICE, 1, 5))
+        StepVerifier.create(withUser(itemsService.getItemsPage("x", ItemsSort.PRICE, 1, 5)))
                 .expectNextCount(1)
                 .verifyComplete();
 
-        verify(itemQueryRepository).findShowcase(eq("x"), eq(ItemsSort.PRICE), eq(5), eq(0));
+        verify(itemQueryRepository).findShowcase(eq("x"), eq(ItemsSort.PRICE), eq(5), eq(0), eq(USERNAME));
         verify(itemQueryRepository).countShowcase(eq("x"));
         verifyNoMoreInteractions(itemQueryRepository);
         verifyNoInteractions(itemCacheService);
@@ -131,7 +135,7 @@ class ItemsServiceTest {
 
     @Test
     void getItemsPage_whenRequestedPageBeyondTotal_returnsLastPage() {
-        when(itemQueryRepository.findShowcase(eq("q"), eq(ItemsSort.NO), anyInt(), anyInt()))
+        when(itemQueryRepository.findShowcase(eq("q"), eq(ItemsSort.NO), anyInt(), anyInt(), anyString()))
                 .thenReturn(Flux.empty())
                 .thenReturn(Flux.just(
                         dto(11, "L1", 1100, 0),
@@ -141,7 +145,7 @@ class ItemsServiceTest {
         when(itemQueryRepository.countShowcase(eq("q")))
                 .thenReturn(Mono.just(12L));
 
-        StepVerifier.create(itemsService.getItemsPage("q", ItemsSort.NO, 99, 5))
+        StepVerifier.create(withUser(itemsService.getItemsPage("q", ItemsSort.NO, 99, 5)))
                 .assertNext(page -> {
                     assertThat(page.paging().pageNumber(), equalTo(3));
                     assertThat(page.items().get(0).get(0).id(), equalTo(11L));
@@ -151,7 +155,7 @@ class ItemsServiceTest {
 
         ArgumentCaptor<Integer> offset = ArgumentCaptor.forClass(Integer.class);
         verify(itemQueryRepository, times(2))
-                .findShowcase(eq("q"), eq(ItemsSort.NO), eq(5), offset.capture());
+                .findShowcase(eq("q"), eq(ItemsSort.NO), eq(5), offset.capture(), eq(USERNAME));
 
         assertThat(offset.getAllValues().get(0), equalTo(490));
         assertThat(offset.getAllValues().get(1), equalTo(10));

@@ -15,11 +15,12 @@ import org.springframework.boot.data.r2dbc.autoconfigure.DataR2dbcAutoConfigurat
 import org.springframework.boot.data.r2dbc.autoconfigure.DataR2dbcRepositoriesAutoConfiguration;
 import org.springframework.boot.liquibase.autoconfigure.LiquibaseAutoConfiguration;
 import org.springframework.boot.r2dbc.autoconfigure.R2dbcAutoConfiguration;
-
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.data.redis.core.ReactiveRedisTemplate;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.ReactiveSecurityContextHolder;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.GenericContainer;
@@ -27,6 +28,8 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
+
+import java.util.List;
 
 import static org.mockito.Mockito.*;
 
@@ -36,6 +39,8 @@ import static org.mockito.Mockito.*;
         webEnvironment = SpringBootTest.WebEnvironment.NONE
 )
 class ItemsServiceRedisIntegrationTest {
+
+    private static final String USERNAME = "user1";
 
     @Container
     static final GenericContainer<?> redis =
@@ -55,10 +60,10 @@ class ItemsServiceRedisIntegrationTest {
             R2dbcAutoConfiguration.class,
             DataR2dbcAutoConfiguration.class,
             DataR2dbcRepositoriesAutoConfiguration.class,
-
             org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration.class,
             org.springframework.boot.jdbc.autoconfigure.DataSourceTransactionManagerAutoConfiguration.class,
             org.springframework.boot.jdbc.autoconfigure.JdbcTemplateAutoConfiguration.class,
+            org.springframework.boot.security.oauth2.client.autoconfigure.reactive.ReactiveOAuth2ClientAutoConfiguration.class,
     })
     @Import({RedisConfig.class, RedisItemCacheService.class, TestConfig.class})
     static class TestApp {
@@ -81,14 +86,9 @@ class ItemsServiceRedisIntegrationTest {
         }
     }
 
-    @Autowired
-    private ItemsService itemsService;
-
-    @Autowired
-    private ItemQueryRepository itemQueryRepository;
-
-    @Autowired
-    private ReactiveRedisTemplate<String, ItemDto> itemRedisTemplate;
+    @Autowired private ItemsService itemsService;
+    @Autowired private ItemQueryRepository itemQueryRepository;
+    @Autowired private ReactiveRedisTemplate<String, ItemDto> itemRedisTemplate;
 
     @BeforeEach
     void setUp() {
@@ -104,18 +104,34 @@ class ItemsServiceRedisIntegrationTest {
         long id = 1L;
         ItemDto item = new ItemDto(id, "Coffee", "desc", "/img.png", 100L, 0);
 
-        when(itemQueryRepository.findItemPage(id)).thenReturn(Mono.just(item));
+        // findItemPage теперь принимает (id, username)
+        when(itemQueryRepository.findItemPage(id, USERNAME))
+                .thenReturn(Mono.just(item));
 
-        StepVerifier.create(itemsService.getItem(id))
+        // оборачиваем вызовы в SecurityContext с USERNAME
+        var auth = UsernamePasswordAuthenticationToken
+                .authenticated(USERNAME, null, List.of());
+
+        Mono<ItemDto> firstCall = itemsService.getItem(id)
+                .contextWrite(ReactiveSecurityContextHolder.withAuthentication(auth));
+
+        Mono<ItemDto> secondCall = itemsService.getItem(id)
+                .contextWrite(ReactiveSecurityContextHolder.withAuthentication(auth));
+
+        // первый вызов — идёт в репозиторий и кладёт в Redis
+        StepVerifier.create(firstCall)
                 .expectNext(item)
                 .verifyComplete();
 
-        StepVerifier.create(itemsService.getItem(id))
+        // второй вызов — должен отдать из Redis, не трогая репозиторий
+        StepVerifier.create(secondCall)
                 .expectNext(item)
                 .verifyComplete();
 
-        verify(itemQueryRepository, times(1)).findItemPage(id);
+        // репозиторий вызван ровно один раз
+        verify(itemQueryRepository, times(1)).findItemPage(id, USERNAME);
 
+        // данные реально лежат в Redis
         StepVerifier.create(itemRedisTemplate.opsForValue().get("cache:item:1"))
                 .expectNext(item)
                 .verifyComplete();
