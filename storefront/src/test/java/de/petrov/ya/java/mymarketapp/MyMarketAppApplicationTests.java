@@ -39,8 +39,9 @@ public class MyMarketAppApplicationTests {
         }
 
         /**
-         * Мок менеджера OAuth2-клиентов — реальный Keycloak не нужен в тестах.
-         * PaymentsClientConfig использует этот бин для получения токена.
+         * Мок менеджера OAuth2-клиентов.
+         * OAuth2ClientConfig объявляет бин с @ConditionalOnMissingBean,
+         * поэтому этот мок имеет приоритет — конфликта нет.
          */
         @Bean
         ReactiveOAuth2AuthorizedClientManager reactiveOAuth2AuthorizedClientManager() {

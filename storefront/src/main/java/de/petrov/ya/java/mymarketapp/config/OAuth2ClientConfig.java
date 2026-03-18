@@ -1,5 +1,6 @@
 package de.petrov.ya.java.mymarketapp.config;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.oauth2.client.AuthorizedClientServiceReactiveOAuth2AuthorizedClientManager;
@@ -14,11 +15,11 @@ public class OAuth2ClientConfig {
     /**
      * Менеджер для machine-to-machine запросов (Client Credentials).
      *
-     * AuthorizedClientServiceReactiveOAuth2AuthorizedClientManager используется
-     * вместо DefaultServerOAuth2AuthorizedClientManager, потому что запросы
-     * из PaymentsGateway происходят вне HTTP-контекста (нет ServerWebExchange).
+     * @ConditionalOnMissingBean позволяет тестам подставить мок-бин
+     * без конфликта переопределения.
      */
     @Bean
+    @ConditionalOnMissingBean
     public ReactiveOAuth2AuthorizedClientManager reactiveOAuth2AuthorizedClientManager(
             ReactiveClientRegistrationRepository clientRegistrationRepository,
             ReactiveOAuth2AuthorizedClientService authorizedClientService
