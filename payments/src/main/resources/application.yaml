@@ -5,6 +5,15 @@ spring:
   application:
     name: payments
 
+  # --- Spring Security: Resource Server ---
+  # jwk-set-uri используется вместо issuer-uri чтобы не обращаться к Keycloak
+  # при старте приложения — декодер создаётся сразу, ключи загружаются лениво
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: ${KEYCLOAK_JWK_SET_URI:http://localhost:8180/realms/my-market/protocol/openid-connect/certs}
+
 payments:
   balance:
     initial-amount: 100000
