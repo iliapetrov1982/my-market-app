@@ -23,6 +23,20 @@ spring:
       host: ${SPRING_DATA_REDIS_HOST:localhost}
       port: ${SPRING_DATA_REDIS_PORT:6379}
 
+    # --- Spring Security ---
+    security:
+      oauth2:
+        client:
+          registration:
+            payments-client:
+              authorization-grant-type: client_credentials
+              client-id: ${KEYCLOAK_CLIENT_ID:storefront-client}
+              client-secret: ${KEYCLOAK_CLIENT_SECRET:storefront-client-secret}
+              scope: openid
+          provider:
+            payments-client:
+              token-uri: ${KEYCLOAK_TOKEN_URI:http://localhost:8180/realms/my-market/protocol/openid-connect/token}
+
 app:
   cache:
     item-ttl: ${APP_CACHE_ITEM_TTL:PT10M}
