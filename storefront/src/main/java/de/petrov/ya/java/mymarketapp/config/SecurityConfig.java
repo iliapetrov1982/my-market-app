@@ -41,6 +41,8 @@ public class SecurityConfig {
                 .authorizeExchange(exchanges -> exchanges
                         // статические ресурсы
                         .pathMatchers("/css/**", "/images/**", "/js/**", "/favicon.ico").permitAll()
+                        // страница логина — публичная (иначе редирект-петля)
+                        .pathMatchers("/login").permitAll()
                         // каталог товаров — публичный
                         .pathMatchers(HttpMethod.GET, "/", "/items", "/items/**").permitAll()
                         // добавить в корзину со страницы товара — только авторизованным
