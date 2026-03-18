@@ -17,7 +17,7 @@ public class ItemQueryRepositoryImpl implements ItemQueryRepository {
     }
 
     @Override
-    public Flux<ItemDto> findShowcase(String q, ItemsSort sort, int limit, int offset) {
+    public Flux<ItemDto> findShowcase(String q, ItemsSort sort, int limit, int offset, String username) {
         String qq = (q == null) ? "" : q.trim();
 
         String orderBy = switch (sort) {
@@ -35,7 +35,7 @@ public class ItemQueryRepositoryImpl implements ItemQueryRepository {
           i.price                      as price,
           coalesce(ci.quantity, 0)     as count
         from items i
-        left join cart_items ci on ci.item_id = i.id
+        left join cart_items ci on ci.item_id = i.id and ci.username = :username
         where (:q = '' or
                lower(i.title) like lower(concat('%%', :q, '%%')) or
                lower(i.description) like lower(concat('%%', :q, '%%')))
@@ -45,31 +45,12 @@ public class ItemQueryRepositoryImpl implements ItemQueryRepository {
 
         return db.sql(sql)
                 .bind("q", qq)
+                .bind("username", username)
                 .bind("limit", limit)
                 .bind("offset", offset)
-                .map((row, meta) -> {
-                    Long id = row.get("id", Long.class);
-                    String title = row.get("title", String.class);
-                    String description = row.get("description", String.class);
-                    String imgPath = row.get("img_path", String.class);
-                    Long price = row.get("price", Long.class);
-
-                    // count может прийти Integer/Long/Short -> берём как Number
-                    Number countNum = row.get("count", Number.class);
-                    int count = (countNum == null) ? 0 : countNum.intValue();
-
-                    return new ItemDto(
-                            id == null ? -1L : id,
-                            title,
-                            description,
-                            imgPath,
-                            price == null ? 0L : price,
-                            count
-                    );
-                })
+                .map((row, meta) -> mapItemDto(row))
                 .all();
     }
-
 
     @Override
     public Mono<Long> countShowcase(String q) {
@@ -93,9 +74,8 @@ public class ItemQueryRepositoryImpl implements ItemQueryRepository {
                 .defaultIfEmpty(0L);
     }
 
-
     @Override
-    public Mono<ItemDto> findItemPage(long id) {
+    public Mono<ItemDto> findItemPage(long id, String username) {
         String sql = """
         select
           i.id                         as id,
@@ -105,33 +85,19 @@ public class ItemQueryRepositoryImpl implements ItemQueryRepository {
           i.price                      as price,
           coalesce(ci.quantity, 0)     as count
         from items i
-        left join cart_items ci on ci.item_id = i.id
+        left join cart_items ci on ci.item_id = i.id and ci.username = :username
         where i.id = :id
         """;
 
         return db.sql(sql)
                 .bind("id", id)
-                .map((row, meta) -> {
-                    Number countNum = row.get("count", Number.class);
-                    int count = (countNum == null) ? 0 : countNum.intValue();
-
-                    Long itemId = row.get("id", Long.class);
-                    Long price = row.get("price", Long.class);
-
-                    return new ItemDto(
-                            itemId == null ? -1L : itemId,
-                            row.get("title", String.class),
-                            row.get("description", String.class),
-                            row.get("img_path", String.class),
-                            price == null ? 0L : price,
-                            count
-                    );
-                })
+                .bind("username", username)
+                .map((row, meta) -> mapItemDto(row))
                 .one();
     }
 
     @Override
-    public Flux<ItemDto> findCartItems() {
+    public Flux<ItemDto> findCartItems(String username) {
         String sql = """
         select
           i.id                         as id,
@@ -142,26 +108,34 @@ public class ItemQueryRepositoryImpl implements ItemQueryRepository {
           ci.quantity                  as count
         from cart_items ci
         join items i on i.id = ci.item_id
+        where ci.username = :username
         order by i.id
         """;
 
         return db.sql(sql)
-                .map((row, meta) -> {
-                    Number countNum = row.get("count", Number.class);
-                    int count = (countNum == null) ? 0 : countNum.intValue();
-
-                    Long itemId = row.get("id", Long.class);
-                    Long price = row.get("price", Long.class);
-
-                    return new ItemDto(
-                            itemId == null ? -1L : itemId,
-                            row.get("title", String.class),
-                            row.get("description", String.class),
-                            row.get("img_path", String.class),
-                            price == null ? 0L : price,
-                            count
-                    );
-                })
+                .bind("username", username)
+                .map((row, meta) -> mapItemDto(row))
                 .all();
+    }
+
+    // -------------------------------------------------------------------------
+    // helpers
+    // -------------------------------------------------------------------------
+
+    private static ItemDto mapItemDto(io.r2dbc.spi.Row row) {
+        Number countNum = row.get("count", Number.class);
+        int count = (countNum == null) ? 0 : countNum.intValue();
+
+        Long itemId = row.get("id", Long.class);
+        Long price = row.get("price", Long.class);
+
+        return new ItemDto(
+                itemId == null ? -1L : itemId,
+                row.get("title", String.class),
+                row.get("description", String.class),
+                row.get("img_path", String.class),
+                price == null ? 0L : price,
+                count
+        );
     }
 }

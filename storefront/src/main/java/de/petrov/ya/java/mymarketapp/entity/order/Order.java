@@ -31,6 +31,9 @@ public class Order {
     @Column("total_sum")
     private Long totalSum;
 
+    @Column("username")
+    private String username;
+
     /**
      * В БД это хранится в таблице order_items.
      * Здесь поле только для удобства (DTO/рендеринга), Spring Data его не сохраняет.
@@ -38,8 +41,9 @@ public class Order {
     @Transient
     private List<OrderItem> items = new ArrayList<>();
 
-    public Order(Long totalSum) {
+    public Order(Long totalSum, String username) {
         this.totalSum = totalSum;
+        this.username = username;
         this.createdAt = OffsetDateTime.now();
     }
 }

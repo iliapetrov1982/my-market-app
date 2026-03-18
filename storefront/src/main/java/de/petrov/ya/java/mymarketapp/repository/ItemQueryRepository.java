@@ -7,11 +7,11 @@ import reactor.core.publisher.Mono;
 
 public interface ItemQueryRepository {
 
-    Flux<ItemDto> findShowcase(String q, ItemsSort sort, int limit, int offset);
+    Flux<ItemDto> findShowcase(String q, ItemsSort sort, int limit, int offset, String username);
 
     Mono<Long> countShowcase(String q);
 
-    Mono<ItemDto> findItemPage(long id);
+    Mono<ItemDto> findItemPage(long id, String username);
 
-    Flux<ItemDto> findCartItems();
+    Flux<ItemDto> findCartItems(String username);
 }

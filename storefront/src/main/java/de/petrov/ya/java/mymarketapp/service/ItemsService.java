@@ -9,12 +9,12 @@ import de.petrov.ya.java.mymarketapp.service.cache.ItemCacheService;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
+import org.springframework.security.core.context.ReactiveSecurityContextHolder;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.function.Supplier;
 
 @Service
 public class ItemsService {
@@ -32,7 +32,6 @@ public class ItemsService {
 
     public Mono<ItemsPage> getItemsPage(String search, ItemsSort sort, int pageNumber, int pageSize) {
         String safeSearch = (search == null) ? "" : search.trim();
-
         int safePageSize = normalizePageSize(pageSize);
         int safePageNumber = Math.max(1, pageNumber);
 
@@ -44,47 +43,85 @@ public class ItemsService {
 
         var pageable = PageRequest.of(safePageNumber - 1, safePageSize, uiSort);
 
-        return loadPage(safeSearch, sort, pageable)
-                .flatMap(page -> {
-                    int totalPages = page.getTotalPages();
-                    if (totalPages > 0 && safePageNumber > totalPages) {
-                        int lastPage = totalPages;
-                        var lastPageable = PageRequest.of(lastPage - 1, safePageSize, uiSort);
-                        return loadPage(safeSearch, sort, lastPageable);
-                    }
-                    return Mono.just(page);
-                })
-                .map(page -> {
-                    Paging paging = new Paging(
-                            safePageSize,
-                            page.getNumber() + 1,
-                            page.hasPrevious(),
-                            page.hasNext()
-                    );
-
-                    return new ItemsPage(
-                            toRowsOfThree(page.getContent()),
-                            paging,
-                            safeSearch,
-                            sort.name()
-                    );
-                });
+        return currentUsername()
+                .flatMap(username -> loadPage(safeSearch, sort, pageable, username)
+                        .flatMap(page -> {
+                            int totalPages = page.getTotalPages();
+                            if (totalPages > 0 && safePageNumber > totalPages) {
+                                var lastPageable = PageRequest.of(totalPages - 1, safePageSize, uiSort);
+                                return loadPage(safeSearch, sort, lastPageable, username);
+                            }
+                            return Mono.just(page);
+                        })
+                        .map(page -> {
+                            Paging paging = new Paging(
+                                    safePageSize,
+                                    page.getNumber() + 1,
+                                    page.hasPrevious(),
+                                    page.hasNext()
+                            );
+                            return new ItemsPage(
+                                    toRowsOfThree(page.getContent()),
+                                    paging,
+                                    safeSearch,
+                                    sort.name()
+                            );
+                        })
+                );
     }
 
-    private Mono<PageImpl<ItemDto>> loadPage(String search, ItemsSort sort, PageRequest pageable) {
+    private Mono<PageImpl<ItemDto>> loadPage(String search, ItemsSort sort,
+                                             PageRequest pageable, String username) {
         String q = search.isBlank() ? "" : search;
-
         int limit = pageable.getPageSize();
         int offset = (int) pageable.getOffset();
 
         Mono<List<ItemDto>> dataMono = itemQueryRepository
-                .findShowcase(q, sort, limit, offset)
+                .findShowcase(q, sort, limit, offset, username)
                 .collectList();
-
         Mono<Long> totalMono = itemQueryRepository.countShowcase(q);
 
         return Mono.zip(dataMono, totalMono)
                 .map(t -> new PageImpl<>(t.getT1(), pageable, t.getT2()));
+    }
+
+    public Mono<ItemDto> getItem(long id) {
+        return currentUsername()
+                .flatMap(username -> getCachedItem(id, username,
+                        () -> new IllegalArgumentException("Item not found: " + id)));
+    }
+
+    public Mono<ItemDto> getItemPage(long id) {
+        return currentUsername()
+                .flatMap(username -> getCachedItem(id, username,
+                        () -> new EntityNotFoundException("Item not found: " + id)));
+    }
+
+    private Mono<ItemDto> getCachedItem(long id, String username,
+                                        java.util.function.Supplier<? extends RuntimeException> ex) {
+        return itemCacheService.get(id)
+                .switchIfEmpty(Mono.defer(() ->
+                        itemQueryRepository.findItemPage(id, username)
+                                .switchIfEmpty(Mono.error(ex.get()))
+                                .flatMap(item ->
+                                        itemCacheService.put(id, item).thenReturn(item)
+                                )
+                ));
+    }
+
+    // -------------------------------------------------------------------------
+    // helpers
+    // -------------------------------------------------------------------------
+
+    /**
+     * Возвращает username текущего пользователя.
+     * Для анонимных запросов (публичные страницы) возвращает пустую строку —
+     * в этом случае JOIN с cart_items не даст ни одной строки, что корректно.
+     */
+    static Mono<String> currentUsername() {
+        return ReactiveSecurityContextHolder.getContext()
+                .map(ctx -> ctx.getAuthentication().getName())
+                .defaultIfEmpty("");
     }
 
     private int normalizePageSize(int pageSize) {
@@ -113,30 +150,4 @@ public class ItemsService {
             String search,
             String sort
     ) {}
-
-    public Mono<ItemDto> getItem(long id) {
-        return getCachedItem(
-                id,
-                () -> new IllegalArgumentException("Item not found: " + id)
-        );
-    }
-
-    public Mono<ItemDto> getItemPage(long id) {
-        return getCachedItem(
-                id,
-                () -> new EntityNotFoundException("Item not found: " + id)
-        );
-    }
-
-    private Mono<ItemDto> getCachedItem(long id, Supplier<? extends RuntimeException> exceptionSupplier) {
-        return itemCacheService.get(id)
-                .switchIfEmpty(Mono.defer(() ->
-                        itemQueryRepository.findItemPage(id)
-                                .switchIfEmpty(Mono.error(exceptionSupplier.get()))
-                                .flatMap(item ->
-                                        itemCacheService.put(id, item)
-                                                .thenReturn(item)
-                                )
-                ));
-    }
 }
