@@ -37,6 +37,11 @@ dependencies {
 
     // UI templates (works with WebFlux)
     implementation 'org.springframework.boot:spring-boot-starter-thymeleaf'
+    implementation 'org.thymeleaf.extras:thymeleaf-extras-springsecurity6'
+
+    // Security: form login + OAuth2 client (для получения токена к payments)
+    implementation 'org.springframework.boot:spring-boot-starter-security'
+    implementation 'org.springframework.boot:spring-boot-starter-oauth2-client'
 
     // R2DBC драйвер для Postgres
     runtimeOnly 'org.postgresql:r2dbc-postgresql'
@@ -53,6 +58,7 @@ dependencies {
     // Tests
     testImplementation "org.springframework.boot:spring-boot-starter-test"
     testImplementation 'io.projectreactor:reactor-test' // StepVerifier
+    testImplementation 'org.springframework.security:spring-security-test'
     testImplementation 'org.springframework.boot:spring-boot-testcontainers'
     testImplementation 'org.testcontainers:testcontainers-junit-jupiter'
     testImplementation 'org.testcontainers:testcontainers-postgresql'
