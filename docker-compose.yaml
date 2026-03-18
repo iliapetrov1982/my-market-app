@@ -1,4 +1,28 @@
 services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.2
+    container_name: my-market-keycloak
+    restart: unless-stopped
+    command: start-dev --import-realm
+    environment:
+      TZ: Europe/Berlin
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      KC_HTTP_PORT: "8180"
+      KC_HOSTNAME_STRICT: "false"
+      KC_HOSTNAME_STRICT_HTTPS: "false"
+      KC_HTTP_ENABLED: "true"
+    ports:
+      - "8180:8180"
+    volumes:
+      - ./keycloak:/opt/keycloak/data/import
+    healthcheck:
+      test: [ "CMD-SHELL", "exec 3<>/dev/tcp/localhost/8180 && echo -e 'GET /health/ready HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3 && cat <&3 | grep -q '200 OK'" ]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 60s
+
   postgres:
     image: postgres:16
     container_name: my-market-postgres16
@@ -82,3 +106,4 @@ services:
 
 volumes:
   pg16_data:
+  keycloak_data:
