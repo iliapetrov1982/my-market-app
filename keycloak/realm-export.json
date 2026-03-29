@@ -1,0 +1,114 @@
+{
+  "realm": "my-market",
+  "enabled": true,
+  "sslRequired": "external",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": false,
+  "editUsernameAllowed": false,
+  "bruteForceProtected": true,
+  "accessTokenLifespan": 300,
+  "clients": [
+    {
+      "clientId": "storefront-client",
+      "name": "Storefront M2M Client",
+      "description": "Machine-to-machine client for storefront -> payments requests (Client Credentials Flow)",
+      "enabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "storefront-client-secret",
+      "serviceAccountsEnabled": true,
+      "publicClient": false,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "protocol": "openid-connect",
+      "defaultClientScopes": [
+        "web-origins",
+        "profile",
+        "roles",
+        "email"
+      ],
+      "optionalClientScopes": [
+        "address",
+        "phone",
+        "offline_access",
+        "microprofile-jwt"
+      ]
+    },
+    {
+      "clientId": "storefront-web",
+      "name": "Storefront Web Client",
+      "description": "Browser client for end-user login (Authorization Code + PKCE)",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": false,
+      "protocol": "openid-connect",
+      "redirectUris": [
+        "http://localhost:8080/*",
+        "http://storefront:8080/*"
+      ],
+      "webOrigins": [
+        "http://localhost:8080",
+        "http://storefront:8080"
+      ],
+      "defaultClientScopes": [
+        "web-origins",
+        "profile",
+        "roles",
+        "email"
+      ],
+      "optionalClientScopes": [
+        "address",
+        "phone",
+        "offline_access",
+        "microprofile-jwt"
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "user1",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Alice",
+      "lastName": "Ivanova",
+      "email": "alice@example.com",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "user1pass",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["default-roles-my-market"]
+    },
+    {
+      "username": "user2",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Bob",
+      "lastName": "Petrov",
+      "email": "bob@example.com",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "user2pass",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["default-roles-my-market"]
+    }
+  ],
+  "roles": {
+    "realm": [
+      {
+        "name": "USER",
+        "description": "Regular marketplace user"
+      }
+    ]
+  }
+}

@@ -1,0 +1,48 @@
+# Запускает только инфраструктурные сервисы (без сборки приложений).
+# Используется при локальной разработке: приложения запускаются из IDE.
+#
+# Использование:
+#   docker compose -f docker-compose.infra.yaml up -d
+#
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.2
+    container_name: my-market-keycloak
+    restart: unless-stopped
+    command: start-dev --import-realm
+    environment:
+      TZ: Europe/Berlin
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      KC_HTTP_PORT: "8180"
+      KC_HOSTNAME_STRICT: "false"
+      KC_HOSTNAME_STRICT_HTTPS: "false"
+      KC_HTTP_ENABLED: "true"
+    ports:
+      - "8180:8180"
+    volumes:
+      - ./keycloak:/opt/keycloak/data/import
+
+  postgres:
+    image: postgres:16
+    container_name: my-market-postgres16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: my-market-app
+      POSTGRES_USER: my_market_user
+      POSTGRES_PASSWORD: my_market_pass
+      TZ: Europe/Berlin
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg16_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    container_name: my-market-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+
+volumes:
+  pg16_data:

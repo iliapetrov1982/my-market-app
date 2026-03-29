@@ -1,0 +1,51 @@
+spring:
+  application:
+    name: my-market-app
+
+  main:
+    web-application-type: reactive
+
+  # --- Runtime DB access via R2DBC ---
+  r2dbc:
+    url: ${SPRING_R2DBC_URL:r2dbc:postgresql://localhost:5432/my-market-app}
+    username: ${SPRING_R2DBC_USERNAME:my_market_user}
+    password: ${SPRING_R2DBC_PASSWORD:my_market_pass}
+
+  liquibase:
+    enabled: true
+    change-log: classpath:/db/changelog/scripts/db.changelog-master.yaml
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/my-market-app}
+    user: ${SPRING_DATASOURCE_USERNAME:my_market_user}
+    password: ${SPRING_DATASOURCE_PASSWORD:my_market_pass}
+
+  data:
+    redis:
+      host: ${SPRING_DATA_REDIS_HOST:localhost}
+      port: ${SPRING_DATA_REDIS_PORT:6379}
+
+  # --- Spring Security ---
+  security:
+    oauth2:
+      client:
+        registration:
+          payments-client:
+            authorization-grant-type: client_credentials
+            client-id: ${KEYCLOAK_CLIENT_ID:storefront-client}
+            client-secret: ${KEYCLOAK_CLIENT_SECRET:storefront-client-secret}
+            client-authentication-method: client_secret_post
+            scope: openid
+        provider:
+          payments-client:
+            token-uri: ${KEYCLOAK_TOKEN_URI:http://localhost:8180/realms/my-market/protocol/openid-connect/token}
+
+app:
+  cache:
+    item-ttl: ${APP_CACHE_ITEM_TTL:PT10M}
+
+payments:
+  base-url: ${PAYMENTS_BASE_URL:http://localhost:8081}
+
+logging:
+  level:
+    liquibase: INFO
+    org.springframework.r2dbc: INFO

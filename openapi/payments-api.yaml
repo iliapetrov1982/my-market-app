@@ -1,0 +1,111 @@
+openapi: 3.0.3
+
+info:
+  title: Payments Service API
+  version: 1.0.0
+  description: |
+    REST API сервиса платежей для витрины интернет-магазина.
+    Используется storefront-приложением для:
+      - запроса текущего баланса
+      - списания суммы заказа
+
+servers:
+  - url: http://localhost:8081
+
+tags:
+  - name: Payments
+    description: Операции сервиса платежей
+
+paths:
+  /api/payments/balance:
+    get:
+      tags:
+        - Payments
+      operationId: getBalance
+      summary: Получить текущий баланс
+      description: Возвращает текущий доступный баланс сервиса платежей.
+      responses:
+        '200':
+          description: Баланс успешно получен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BalanceResponse'
+
+  /api/payments/charge:
+    post:
+      tags:
+        - Payments
+      operationId: charge
+      summary: Выполнить списание
+      description: |
+        Выполняет попытку списания указанной суммы.
+        Если средств недостаточно, возвращает success=false.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChargeRequest'
+      responses:
+        '200':
+          description: Результат попытки списания
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChargeResponse'
+        '400':
+          description: Некорректный запрос
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  schemas:
+    BalanceResponse:
+      type: object
+      required:
+        - amount
+      properties:
+        amount:
+          type: integer
+          format: int64
+          description: Текущий доступный баланс в минимальных денежных единицах
+
+    ChargeRequest:
+      type: object
+      required:
+        - amount
+      properties:
+        amount:
+          type: integer
+          format: int64
+          minimum: 1
+          description: Сумма списания в минимальных денежных единицах
+
+    ChargeResponse:
+      type: object
+      required:
+        - success
+        - remainingAmount
+        - message
+      properties:
+        success:
+          type: boolean
+          description: Признак успешного списания
+        remainingAmount:
+          type: integer
+          format: int64
+          description: Остаток баланса после выполнения операции
+        message:
+          type: string
+          description: Сообщение о результате операции
+
+    ErrorResponse:
+      type: object
+      required:
+        - message
+      properties:
+        message:
+          type: string

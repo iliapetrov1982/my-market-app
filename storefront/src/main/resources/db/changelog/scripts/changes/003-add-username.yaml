@@ -1,0 +1,82 @@
+databaseChangeLog:
+  - changeSet:
+      id: 003-add-username
+      author: ilia-petrov
+      comment: >
+        Привязка корзины и заказов к авторизованному пользователю.
+        Добавляем колонку username в cart_items и orders.
+        Существующие строки получают значение 'anonymous' (обратная совместимость).
+
+      changes:
+        # ============================================================
+        # 1) cart_items: добавляем username
+        # PK меняем с (item_id) на (item_id, username),
+        # чтобы каждый пользователь мог иметь свою позицию в корзине.
+        # ============================================================
+        - dropPrimaryKey:
+            tableName: cart_items
+            constraintName: pk_cart_items
+
+        - addColumn:
+            tableName: cart_items
+            columns:
+              - column:
+                  name: username
+                  type: varchar(255)
+                  constraints:
+                    nullable: false
+                  defaultValue: 'anonymous'
+
+        - addPrimaryKey:
+            tableName: cart_items
+            columnNames: item_id, username
+            constraintName: pk_cart_items
+
+        - createIndex:
+            tableName: cart_items
+            indexName: idx_cart_items_username
+            columns:
+              - column:
+                  name: username
+
+        # ============================================================
+        # 2) orders: добавляем username
+        # ============================================================
+        - addColumn:
+            tableName: orders
+            columns:
+              - column:
+                  name: username
+                  type: varchar(255)
+                  constraints:
+                    nullable: false
+                  defaultValue: 'anonymous'
+
+        - createIndex:
+            tableName: orders
+            indexName: idx_orders_username
+            columns:
+              - column:
+                  name: username
+
+      rollback:
+        - dropIndex:
+            tableName: orders
+            indexName: idx_orders_username
+        - dropColumn:
+            tableName: orders
+            columnNames: username
+
+        - dropPrimaryKey:
+            tableName: cart_items
+            constraintName: pk_cart_items
+        - dropIndex:
+            tableName: cart_items
+            indexName: idx_cart_items_username
+        - dropColumn:
+            tableName: cart_items
+            columnNames: username
+        - addPrimaryKey:
+            tableName: cart_items
+            columnNames: item_id
+            constraintName: pk_cart_items
